@@ -21,3 +21,6 @@ coverage/
 .claude/delamains/*/runtime/
 .claude/delamains/*/telemetry/
 .claude/scheduled_tasks.lock
+.claude/scripts/.cache/pulse/*.json
+.claude/delamains/*/telemetry/events.jsonl
+.claude/delamains/*/dispatcher/control/drain-request.json
