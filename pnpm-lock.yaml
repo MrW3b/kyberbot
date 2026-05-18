@@ -55,6 +55,9 @@ importers:
       '@kybernesisai/arcana-core':
         specifier: file:../../../arcana/packages/arcana-core
         version: file:../arcana/packages/arcana-core
+      '@kybernesisai/arcana-testkit':
+        specifier: file:../../../arcana/packages/arcana-testkit
+        version: file:../arcana/packages/arcana-testkit
       '@sentry/node':
         specifier: ^10.43.0
         version: 10.43.0
@@ -765,6 +768,9 @@ packages:
 
   '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
     resolution: {directory: ../arcana/packages/arcana-core, type: directory}
+
+  '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
+    resolution: {directory: ../arcana/packages/arcana-testkit, type: directory}
 
   '@libsql/darwin-arm64@0.5.29':
     resolution: {integrity: sha512-K+2RIB1OGFPYQbfay48GakLhqf3ArcbHqPFu7EZiaUcRgFcdw8RoltsMyvbj5ix2fY0HV3Q3Ioa/ByvQdaSM0A==}
@@ -3893,6 +3899,10 @@ snapshots:
       zod: 3.25.76
 
   '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
+    dependencies:
+      '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
+
+  '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
     dependencies:
       '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
 
