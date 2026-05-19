@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { StructuredStore } from '@kybernesisai/arcana-contracts';
+import type { StructuredStore } from '@kybernesis/arcana-contracts';
 import {
   createFakeStructuredStore,
   createFakeVectorStore,
   createFakeEmbeddingProvider,
   createFakeLLMProvider,
-} from '@kybernesisai/arcana-testkit/fakes';
+} from '@kybernesis/arcana-testkit/fakes';
 
 vi.mock('../logger.js', () => ({
   createLogger: () => ({
@@ -32,7 +32,7 @@ beforeAll(async () => {
   structured = createFakeStructuredStore();
   await structured.connect();
 
-  initArcana({
+  await initArcana({
     structured,
     vector: createFakeVectorStore(),
     embed: createFakeEmbeddingProvider(),

@@ -22,8 +22,8 @@ import { extractRelationships } from './relationship-extractor.js';
 import { indexDocument, isChromaAvailable } from './embeddings.js';
 import { extractFactsRealtime } from './fact-extractor.js';
 import { getArcanaInstance } from './arcana-singleton.js';
-import { NotImplementedError } from '@kybernesisai/arcana-core';
-import type { Memory } from '@kybernesisai/arcana-contracts';
+import { NotImplementedError } from '@kybernesis/arcana-core';
+import type { Memory } from '@kybernesis/arcana-contracts';
 
 const logger = createLogger('brain');
 

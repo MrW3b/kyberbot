@@ -21,8 +21,8 @@ import { join } from 'path';
 import { mkdir } from 'fs/promises';
 import { createLogger } from '../logger.js';
 import { getArcanaInstance } from './arcana-singleton.js';
-import { NotImplementedError } from '@kybernesisai/arcana-core';
-import type { Memory } from '@kybernesisai/arcana-contracts';
+import { NotImplementedError } from '@kybernesis/arcana-core';
+import type { Memory } from '@kybernesis/arcana-contracts';
 
 const logger = createLogger('timeline');
 

@@ -8,13 +8,19 @@
  * adoption is incremental.
  */
 
-import { createArcana, type Arcana, type ArcanaOptions } from '@kybernesisai/arcana-core';
+import { createArcana, type Arcana, type ArcanaOptions } from '@kybernesis/arcana-core';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('arcana-singleton');
 
 let instance: Arcana | null = null;
 let providers: ArcanaOptions | null = null;
 
-export function initArcana(opts: ArcanaOptions): Arcana {
-  if (instance) return instance;
+export async function initArcana(opts: ArcanaOptions): Promise<Arcana> {
+  if (instance) {
+    logger.warn('initArcana called while an instance already exists — disposing previous instance first');
+    await disposeArcana();
+  }
   providers = opts;
   instance = createArcana(opts);
   return instance;
@@ -26,10 +32,16 @@ export function getArcanaInstance(): Arcana | null {
 
 export async function disposeArcana(): Promise<void> {
   if (!providers) return;
-  await Promise.allSettled([
-    providers.structured.disconnect(),
-    providers.vector.disconnect(),
-  ]);
+  const disconnects: Promise<unknown>[] = [providers.structured.disconnect()];
+  if (providers.vector) disconnects.push(providers.vector.disconnect());
+  const results = await Promise.allSettled(disconnects);
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      logger.warn('Arcana provider disconnect failed', {
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  }
   instance = null;
   providers = null;
 }

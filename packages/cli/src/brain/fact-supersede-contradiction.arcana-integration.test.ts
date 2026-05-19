@@ -13,13 +13,13 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { StructuredStore } from '@kybernesisai/arcana-contracts';
+import type { StructuredStore } from '@kybernesis/arcana-contracts';
 import {
   createFakeStructuredStore,
   createFakeVectorStore,
   createFakeEmbeddingProvider,
   createFakeLLMProvider,
-} from '@kybernesisai/arcana-testkit/fakes';
+} from '@kybernesis/arcana-testkit/fakes';
 
 vi.mock('./embeddings.js', () => ({
   indexDocument: vi.fn(async () => 0),
@@ -52,7 +52,7 @@ beforeAll(async () => {
 
   structured = createFakeStructuredStore();
   await structured.connect();
-  initArcana({
+  await initArcana({
     structured,
     vector: createFakeVectorStore(),
     embed: createFakeEmbeddingProvider(),

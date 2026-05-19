@@ -37,6 +37,7 @@ import {
   displayShutdownMessage,
 } from '../splash.js';
 import { startTunnel, getTunnelUrl } from '../services/tunnel.js';
+import type { VectorStore } from '@kybernesis/arcana-contracts';
 
 const logger = createLogger('cli');
 
@@ -165,7 +166,7 @@ export function createRunCommand(): Command {
           enabled: true,
           start: async () => {
             const { join } = await import('node:path');
-            const { createLibsqlStructuredStore } = await import('@kybernesisai/arcana-provider-libsql');
+            const { createLibsqlStructuredStore } = await import('@kybernesis/arcana-provider-libsql');
             const { createChromaDBVectorStore } = await import('../brain/providers/chromadb-vector-store.js');
             const { createOpenAIEmbeddingProvider } = await import('../brain/providers/openai-embedding-provider.js');
             const { createClaudeLLMProvider } = await import('../brain/providers/claude-llm-provider.js');
@@ -177,9 +178,11 @@ export function createRunCommand(): Command {
             await structured.connect();
 
             const collectionName = getCollectionNameForRoot(root);
-            const vector = createChromaDBVectorStore({ collectionName });
+            let vector: VectorStore | undefined;
             try {
-              await vector.connect();
+              const v = createChromaDBVectorStore({ collectionName });
+              await v.connect();
+              vector = v;
             } catch (err) {
               logger.warn('Arcana vector store unavailable — continuing without semantic mirror', {
                 error: err instanceof Error ? err.message : String(err),
@@ -189,7 +192,7 @@ export function createRunCommand(): Command {
             const embed = createOpenAIEmbeddingProvider();
             const llm = createClaudeLLMProvider();
 
-            initArcana({ structured, vector, embed, llm });
+            await initArcana({ structured, vector, embed, llm });
 
             return {
               stop: async () => {

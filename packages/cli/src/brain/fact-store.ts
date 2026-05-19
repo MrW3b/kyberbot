@@ -26,8 +26,8 @@ import { createLogger } from '../logger.js';
 
 import { indexDocument, isChromaAvailable } from './embeddings.js';
 import { getArcanaInstance } from './arcana-singleton.js';
-import { NotImplementedError } from '@kybernesisai/arcana-core';
-import type { FactSourceType, Scopes } from '@kybernesisai/arcana-contracts';
+import { NotImplementedError } from '@kybernesis/arcana-core';
+import type { FactSourceType, Scopes } from '@kybernesis/arcana-contracts';
 
 const logger = createLogger('fact-store');
 

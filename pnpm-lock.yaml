@@ -7,7 +7,7 @@ settings:
 overrides:
   flatted: '>=3.4.2'
   music-metadata: '>=11.12.3'
-  '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
+  '@kybernesis/arcana-contracts': file:../arcana/packages/arcana-contracts
 
 importers:
 
@@ -43,24 +43,21 @@ importers:
       '@inquirer/prompts':
         specifier: ^7.10.1
         version: 7.10.1(@types/node@22.19.15)
+      '@kybernesis/arcana-contracts':
+        specifier: file:../../../arcana/packages/arcana-contracts
+        version: file:../arcana/packages/arcana-contracts
+      '@kybernesis/arcana-core':
+        specifier: file:../../../arcana/packages/arcana-core
+        version: file:../arcana/packages/arcana-core
+      '@kybernesis/arcana-provider-libsql':
+        specifier: file:../../../arcana/packages/arcana-provider-libsql
+        version: file:../arcana/packages/arcana-provider-libsql
+      '@kybernesis/arcana-testkit':
+        specifier: file:../../../arcana/packages/arcana-testkit
+        version: file:../arcana/packages/arcana-testkit
       '@kybernesis/arp-spec':
         specifier: ^0.2.1
         version: 0.2.1
-      '@kybernesisai/arcana-config':
-        specifier: file:../../../arcana/packages/arcana-config
-        version: file:../arcana/packages/arcana-config
-      '@kybernesisai/arcana-contracts':
-        specifier: file:../../../arcana/packages/arcana-contracts
-        version: file:../arcana/packages/arcana-contracts
-      '@kybernesisai/arcana-core':
-        specifier: file:../../../arcana/packages/arcana-core
-        version: file:../arcana/packages/arcana-core
-      '@kybernesisai/arcana-provider-libsql':
-        specifier: file:../../../arcana/packages/arcana-provider-libsql
-        version: file:../arcana/packages/arcana-provider-libsql
-      '@kybernesisai/arcana-testkit':
-        specifier: file:../../../arcana/packages/arcana-testkit
-        version: file:../arcana/packages/arcana-testkit
       '@sentry/node':
         specifier: ^10.43.0
         version: 10.43.0
@@ -760,23 +757,20 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@kybernesis/arp-spec@0.2.1':
-    resolution: {integrity: sha512-1+zjfITmxEubnOEMJwWi3PusDnKOb68HgWXDd+t10glMgc8M2V/dT/VDjse9jaACdtSLyc+FlV11Z9FP0iMc2w==}
-
-  '@kybernesisai/arcana-config@file:../arcana/packages/arcana-config':
-    resolution: {directory: ../arcana/packages/arcana-config, type: directory}
-
-  '@kybernesisai/arcana-contracts@file:../arcana/packages/arcana-contracts':
+  '@kybernesis/arcana-contracts@file:../arcana/packages/arcana-contracts':
     resolution: {directory: ../arcana/packages/arcana-contracts, type: directory}
 
-  '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
+  '@kybernesis/arcana-core@file:../arcana/packages/arcana-core':
     resolution: {directory: ../arcana/packages/arcana-core, type: directory}
 
-  '@kybernesisai/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
+  '@kybernesis/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
     resolution: {directory: ../arcana/packages/arcana-provider-libsql, type: directory}
 
-  '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
+  '@kybernesis/arcana-testkit@file:../arcana/packages/arcana-testkit':
     resolution: {directory: ../arcana/packages/arcana-testkit, type: directory}
+
+  '@kybernesis/arp-spec@0.2.1':
+    resolution: {integrity: sha512-1+zjfITmxEubnOEMJwWi3PusDnKOb68HgWXDd+t10glMgc8M2V/dT/VDjse9jaACdtSLyc+FlV11Z9FP0iMc2w==}
 
   '@libsql/darwin-arm64@0.5.29':
     resolution: {integrity: sha512-K+2RIB1OGFPYQbfay48GakLhqf3ArcbHqPFu7EZiaUcRgFcdw8RoltsMyvbj5ix2fY0HV3Q3Ioa/ByvQdaSM0A==}
@@ -3892,30 +3886,27 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
+  '@kybernesis/arcana-contracts@file:../arcana/packages/arcana-contracts':
+    dependencies:
+      zod: 3.25.76
+
+  '@kybernesis/arcana-core@file:../arcana/packages/arcana-core':
+    dependencies:
+      '@kybernesis/arcana-contracts': file:../arcana/packages/arcana-contracts
+      zod: 3.25.76
+
+  '@kybernesis/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
+    dependencies:
+      '@kybernesis/arcana-contracts': file:../arcana/packages/arcana-contracts
+      libsql: 0.5.29
+
+  '@kybernesis/arcana-testkit@file:../arcana/packages/arcana-testkit':
+    dependencies:
+      '@kybernesis/arcana-contracts': file:../arcana/packages/arcana-contracts
+
   '@kybernesis/arp-spec@0.2.1':
     dependencies:
       zod: 3.25.76
-
-  '@kybernesisai/arcana-config@file:../arcana/packages/arcana-config':
-    dependencies:
-      zod: 3.25.76
-
-  '@kybernesisai/arcana-contracts@file:../arcana/packages/arcana-contracts':
-    dependencies:
-      zod: 3.25.76
-
-  '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
-    dependencies:
-      '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
-
-  '@kybernesisai/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
-    dependencies:
-      '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
-      libsql: 0.5.29
-
-  '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
-    dependencies:
-      '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
 
   '@libsql/darwin-arm64@0.5.29':
     optional: true

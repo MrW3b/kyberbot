@@ -17,7 +17,7 @@ import type {
   VectorItem,
   VectorQueryOpts,
   VectorMatch,
-} from '@kybernesisai/arcana-contracts';
+} from '@kybernesis/arcana-contracts';
 import { createLogger } from '../../logger.js';
 
 const logger = createLogger('chromadb-vector-store');
