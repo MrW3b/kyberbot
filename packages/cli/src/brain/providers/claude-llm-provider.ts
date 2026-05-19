@@ -17,6 +17,13 @@ export interface ClaudeLLMProviderOptions {
   client?: ClaudeClient;
 }
 
+// `temperature` and `maxTokens` are intentionally dropped: KyberBot's ClaudeClient
+// pins subprocess mode (claude.ts:91-95 forces it for memory safety), and `claude -p`
+// exposes neither flag. Plumbing them would require new SDK + subprocess paths with
+// no kernel consumer asking for them today. The adapter narrows the contract to
+// match what subprocess mode can actually honour.
+type SupportedLLMCompleteOpts = Omit<LLMCompleteOpts, 'temperature' | 'maxTokens'>;
+
 export function createClaudeLLMProvider(
   opts: ClaudeLLMProviderOptions = {},
 ): LLMProvider {
@@ -26,11 +33,10 @@ export function createClaudeLLMProvider(
   return {
     model,
 
-    async complete(prompt: string, completeOpts: LLMCompleteOpts = {}): Promise<string> {
+    async complete(prompt: string, completeOpts: SupportedLLMCompleteOpts = {}): Promise<string> {
       return client.complete(prompt, {
         model,
         system: completeOpts.system,
-        maxTokens: completeOpts.maxTokens,
         subprocess: true,
       });
     },

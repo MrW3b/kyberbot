@@ -37,7 +37,6 @@ import {
   displayShutdownMessage,
 } from '../splash.js';
 import { startTunnel, getTunnelUrl } from '../services/tunnel.js';
-import type { VectorStore } from '@kybernesis/arcana-contracts';
 
 const logger = createLogger('cli');
 
@@ -165,41 +164,8 @@ export function createRunCommand(): Command {
           name: 'Arcana',
           enabled: true,
           start: async () => {
-            const { join } = await import('node:path');
-            const { createLibsqlStructuredStore } = await import('@kybernesis/arcana-provider-libsql');
-            const { createChromaDBVectorStore } = await import('../brain/providers/chromadb-vector-store.js');
-            const { createOpenAIEmbeddingProvider } = await import('../brain/providers/openai-embedding-provider.js');
-            const { createClaudeLLMProvider } = await import('../brain/providers/claude-llm-provider.js');
-            const { getCollectionNameForRoot } = await import('../brain/embeddings.js');
-            const { initArcana, disposeArcana } = await import('../brain/arcana-singleton.js');
-
-            const dbPath = join(root, 'data', 'arcana.db');
-            const structured = createLibsqlStructuredStore(dbPath);
-            await structured.connect();
-
-            const collectionName = getCollectionNameForRoot(root);
-            let vector: VectorStore | undefined;
-            try {
-              const v = createChromaDBVectorStore({ collectionName });
-              await v.connect();
-              vector = v;
-            } catch (err) {
-              logger.warn('Arcana vector store unavailable — continuing without semantic mirror', {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-
-            const embed = createOpenAIEmbeddingProvider();
-            const llm = createClaudeLLMProvider();
-
-            await initArcana({ structured, vector, embed, llm });
-
-            return {
-              stop: async () => {
-                await disposeArcana();
-              },
-              status: () => 'running' as const,
-            };
+            const { bootArcana } = await import('../brain/boot-arcana.js');
+            return bootArcana(root);
           },
         });
 
