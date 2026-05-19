@@ -157,7 +157,51 @@ export function createRunCommand(): Command {
         });
 
         // ─────────────────────────────────────────────────────────────
-        // Service 2: Server (Express + brain API + channels)
+        // Service 2: Arcana (structured store + vector + embed + LLM)
+        // ─────────────────────────────────────────────────────────────
+
+        registerService({
+          name: 'Arcana',
+          enabled: true,
+          start: async () => {
+            const { join } = await import('node:path');
+            const { createLibsqlStructuredStore } = await import('@kybernesisai/arcana-provider-libsql');
+            const { createChromaDBVectorStore } = await import('../brain/providers/chromadb-vector-store.js');
+            const { createOpenAIEmbeddingProvider } = await import('../brain/providers/openai-embedding-provider.js');
+            const { createClaudeLLMProvider } = await import('../brain/providers/claude-llm-provider.js');
+            const { getCollectionNameForRoot } = await import('../brain/embeddings.js');
+            const { initArcana, disposeArcana } = await import('../brain/arcana-singleton.js');
+
+            const dbPath = join(root, 'data', 'arcana.db');
+            const structured = createLibsqlStructuredStore(dbPath);
+            await structured.connect();
+
+            const collectionName = getCollectionNameForRoot(root);
+            const vector = createChromaDBVectorStore({ collectionName });
+            try {
+              await vector.connect();
+            } catch (err) {
+              logger.warn('Arcana vector store unavailable — continuing without semantic mirror', {
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+
+            const embed = createOpenAIEmbeddingProvider();
+            const llm = createClaudeLLMProvider();
+
+            initArcana({ structured, vector, embed, llm });
+
+            return {
+              stop: async () => {
+                await disposeArcana();
+              },
+              status: () => 'running' as const,
+            };
+          },
+        });
+
+        // ─────────────────────────────────────────────────────────────
+        // Service 3: Server (Express + brain API + channels)
         // ─────────────────────────────────────────────────────────────
 
         registerService({

@@ -21,6 +21,7 @@
     "@kybernesisai/arcana-contracts": "file:../../../arcana/packages/arcana-contracts",
     "@kybernesisai/arcana-config": "file:../../../arcana/packages/arcana-config",
     "@kybernesisai/arcana-core": "file:../../../arcana/packages/arcana-core",
+    "@kybernesisai/arcana-provider-libsql": "file:../../../arcana/packages/arcana-provider-libsql",
     "@kybernesisai/arcana-testkit": "file:../../../arcana/packages/arcana-testkit",
     "@sentry/node": "^10.43.0",
     "@whiskeysockets/baileys": "^6.7.0",

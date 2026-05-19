@@ -55,6 +55,9 @@ importers:
       '@kybernesisai/arcana-core':
         specifier: file:../../../arcana/packages/arcana-core
         version: file:../arcana/packages/arcana-core
+      '@kybernesisai/arcana-provider-libsql':
+        specifier: file:../../../arcana/packages/arcana-provider-libsql
+        version: file:../arcana/packages/arcana-provider-libsql
       '@kybernesisai/arcana-testkit':
         specifier: file:../../../arcana/packages/arcana-testkit
         version: file:../arcana/packages/arcana-testkit
@@ -768,6 +771,9 @@ packages:
 
   '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
     resolution: {directory: ../arcana/packages/arcana-core, type: directory}
+
+  '@kybernesisai/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
+    resolution: {directory: ../arcana/packages/arcana-provider-libsql, type: directory}
 
   '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
     resolution: {directory: ../arcana/packages/arcana-testkit, type: directory}
@@ -3901,6 +3907,11 @@ snapshots:
   '@kybernesisai/arcana-core@file:../arcana/packages/arcana-core':
     dependencies:
       '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
+
+  '@kybernesisai/arcana-provider-libsql@file:../arcana/packages/arcana-provider-libsql':
+    dependencies:
+      '@kybernesisai/arcana-contracts': file:../arcana/packages/arcana-contracts
+      libsql: 0.5.29
 
   '@kybernesisai/arcana-testkit@file:../arcana/packages/arcana-testkit':
     dependencies:
