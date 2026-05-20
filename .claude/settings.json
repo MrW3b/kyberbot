@@ -6,8 +6,5 @@
   },
   "enabledPlugins": {
     "als@als-marketplace-stable": true
-  },
-  "worktree": {
-    "bgIsolation": "none"
   }
 }
