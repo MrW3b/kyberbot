@@ -376,21 +376,58 @@ export function createBackupCommand(): Command {
       console.log();
 
       // 2. ChromaDB
+      //
+      // ChromaDB runs as a SERVER (CHROMA_URL), not as an on-disk SQLite file in
+      // data/chromadb/. That directory is empty by design — the server persists its
+      // data elsewhere — so inspecting it on disk always false-reds. We query the
+      // live collection's chunk count via the server's v2 API instead. This makes a
+      // real failure (server down, collection dropped, ingest stopped → 0 chunks)
+      // look DIFFERENT from healthy, rather than identical to the standing empty-dir
+      // alarm a true failure used to hide behind.
       console.log(chalk.dim('2. ChromaDB vector store'));
-      const chromaDir = join(root, 'data', 'chromadb');
-      if (existsSync(chromaDir)) {
-        try {
-          const files = readdirSync(chromaDir, { recursive: true });
-          if (files.length > 0) {
-            pass(`ChromaDB — ${files.length} files`);
-          } else {
-            warn('ChromaDB — directory exists but is empty');
+      {
+        const chromaUrl = (process.env.CHROMA_URL || 'http://localhost:8001').replace(/\/$/, '');
+        const collectionName = process.env.CHROMA_COLLECTION || 'kyberbot_jarvis';
+        const tenant = process.env.CHROMA_TENANT || 'default_tenant';
+        const database = process.env.CHROMA_DATABASE || 'default_database';
+        const apiBase = `${chromaUrl}/api/v2/tenants/${tenant}/databases/${database}/collections`;
+
+        const fetchJson = async (url: string): Promise<any> => {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          try {
+            const res = await fetch(url, { signal: ctrl.signal });
+            if (!res.ok) return undefined;
+            return await res.json();
+          } catch {
+            return undefined;
+          } finally {
+            clearTimeout(t);
           }
-        } catch {
-          warn('ChromaDB — could not read directory');
+        };
+
+        // Liveness probe first — Chroma down is a real backup-integrity failure.
+        const beat = await fetchJson(`${chromaUrl}/api/v2/heartbeat`);
+        if (beat === undefined) {
+          fail(`ChromaDB — server unreachable at ${chromaUrl} (vector store not backed up live)`);
+        } else {
+          const collections = await fetchJson(apiBase);
+          const collection = Array.isArray(collections)
+            ? collections.find((c: any) => c?.name === collectionName)
+            : undefined;
+          if (!collection?.id) {
+            fail(`ChromaDB — collection '${collectionName}' not found on live server (ingest never ran or collection dropped)`);
+          } else {
+            const count = await fetchJson(`${apiBase}/${collection.id}/count`);
+            if (typeof count !== 'number') {
+              fail(`ChromaDB — collection '${collectionName}' found but count query failed (server degraded)`);
+            } else if (count > 0) {
+              pass(`ChromaDB — collection '${collectionName}' live, ${count} chunks`);
+            } else {
+              fail(`ChromaDB — collection '${collectionName}' is EMPTY (0 chunks — ingest stopped or store wiped)`);
+            }
+          }
         }
-      } else {
-        warn('ChromaDB — data/chromadb/ not found (created on first run)');
       }
 
       console.log();
