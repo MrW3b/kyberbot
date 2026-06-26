@@ -20,6 +20,11 @@ export interface Message {
   content: string;
 }
 
+export interface ImageInput {
+  data: string;       // base64-encoded image data
+  mediaType: string;  // e.g. 'image/jpeg', 'image/png'
+}
+
 export interface CompleteOptions {
   model?: 'haiku' | 'sonnet' | 'opus';
   system?: string;
@@ -113,7 +118,7 @@ export class ClaudeClient {
     }
   }
 
-  /**
+/**
    * Single completion — fire and forget prompt
    */
   async complete(prompt: string, opts: CompleteOptions = {}): Promise<string> {
@@ -145,6 +150,94 @@ export class ClaudeClient {
       .join('\n\n');
     const fullPrompt = `${system}\n\n${historyPrompt}`;
     return this.completeSubprocess(fullPrompt, { model });
+  }
+
+  /**
+   * Vision completion — prompt + one or more images via stream-json subprocess input.
+   * Uses --input-format stream-json so no API key is needed beyond Claude Code auth.
+   */
+  async completeWithImages(
+    prompt: string,
+    images: ImageInput[],
+    opts: CompleteOptions = {}
+  ): Promise<string> {
+    if (!opts.model) {
+      opts.model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus';
+    }
+    return this.completeSubprocessWithImages(prompt, images, opts);
+  }
+
+  private completeSubprocessWithImages(
+    prompt: string,
+    images: ImageInput[],
+    opts: CompleteOptions
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const args = ['--print', '-', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
+      args.push('--dangerously-skip-permissions');
+      if (opts.system) args.push('--system-prompt', opts.system);
+      if (opts.model) args.push('--model', opts.model);
+      if (opts.maxTurns) args.push('--max-turns', String(opts.maxTurns));
+
+      const content: any[] = images.map(img => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mediaType, data: img.data },
+      }));
+      if (prompt) content.push({ type: 'text', text: prompt });
+
+      const inputMessage = JSON.stringify({ type: 'user', message: { role: 'user', content } });
+
+      const proc = spawn('claude', args, {
+        env: {
+          ...process.env,
+          CLAUDECODE: '',
+          CLAUDE_CODE_ENTRYPOINT: '',
+          // Strip API key so claude falls back to subscription auth.
+          // Otherwise spawned claude uses API billing instead of Claude Max,
+          // which fails when the console balance is depleted.
+          ANTHROPIC_API_KEY: '',
+        },
+        cwd: opts.cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      if (proc.stdin) {
+        proc.stdin.write(inputMessage + '\n');
+        proc.stdin.end();
+      }
+
+      const chunks: Buffer[] = [];
+      const errChunks: Buffer[] = [];
+
+      proc.stdout.on('data', (data: Buffer) => chunks.push(data));
+      proc.stderr.on('data', (data: Buffer) => errChunks.push(data));
+
+      proc.on('close', (code) => {
+        const stdout = Buffer.concat(chunks).toString().trim();
+        const stderr = Buffer.concat(errChunks).toString();
+        chunks.length = 0;
+        errChunks.length = 0;
+
+        let resultText = '';
+        for (const line of stdout.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed);
+            if (event.type === 'result' && event.result) resultText = event.result;
+          } catch { /* skip */ }
+        }
+
+        if (code === 0 || resultText) {
+          resolve(resultText || stdout);
+        } else {
+          logger.error('Vision subprocess failed', { code, stderr: stderr.slice(0, 300) });
+          reject(new Error(`Vision subprocess failed: ${stderr.slice(0, 300) || `exit ${code}`}`));
+        }
+      });
+
+      proc.on('error', (err) => reject(new Error(`Failed to spawn claude: ${err.message}`)));
+    });
   }
 
   private async completeSDK(
@@ -208,6 +301,10 @@ export class ClaudeClient {
           // Must unset CLAUDECODE to avoid Claude Code detecting nested invocation
           CLAUDECODE: '',
           CLAUDE_CODE_ENTRYPOINT: '',
+          // Strip API key so claude falls back to subscription auth.
+          // Otherwise spawned claude uses API billing instead of Claude Max,
+          // which fails when the console balance is depleted.
+          ANTHROPIC_API_KEY: '',
         },
         // cwd determines which ~/.claude/projects/<slug> dir Claude Code
         // writes this session's .jsonl to. Without this, every agent's
@@ -395,6 +492,18 @@ export class ClaudeClient {
             stderrPreview: stderr.slice(0, 200),
           });
           resolve(resultText);
+        } else if (!useStreamJson && stdout.length > 200) {
+          // SF-013 — post-completion exit-1 in plain mode.
+          // The agent completed all tool-call work and printed a response (substantial
+          // stdout), but the claude subprocess exited non-zero — typically a teardown
+          // failure (session-transcript write conflict, cleanup error, telemetry flush).
+          // resultText is only populated from stream-json parsing, which is disabled in
+          // plain mode, so the existing resultText branch above can never fire here.
+          // Recover the response from raw stdout rather than discarding completed work.
+          logger.warn(`claude subprocess exited ${code} but stdout has ${stdout.length} chars in plain mode — treating as completed (SF-013)`, {
+            stderrPreview: stderr.slice(0, 200),
+          });
+          resolve(stdout);
         } else {
           logger.error(`claude subprocess exited with code ${code}`, { stderr: stderr.slice(0, 500), subtype: resultSubtype });
           reject(new Error(`claude subprocess failed: ${stderr.slice(0, 500) || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`));

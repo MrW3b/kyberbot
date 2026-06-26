@@ -41,18 +41,39 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
 
   logger.info(`Spawning agent: ${name}`, { model: agent.model, maxTurns: agent.maxTurns });
 
-  const response = await client.complete(prompt, opts);
-  const durationMs = Date.now() - start;
+  // SF-013 mode (2) — bounded retry for early transient failures.
+  // The claude subprocess can exit within seconds with tiny stdout and no work done
+  // (API rate-limit hit or startup/init race). Retrying after a short delay succeeds
+  // because the issue is transient. Post-completion failures (mode 1) are handled
+  // upstream by the stdout-fallback in completeSubprocess and never reach here.
+  const MAX_RETRIES = 2;
+  let lastError: Error | null = null;
 
-  logger.info(`Agent ${name} completed`, { durationMs });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delayMs = attempt * 10_000; // 10s on attempt 1, 20s on attempt 2
+      logger.warn(`Agent ${name} spawn failed (attempt ${attempt - 1}) — retrying in ${delayMs / 1000}s`, {
+        error: (lastError?.message ?? '').slice(0, 200),
+      });
+      await new Promise<void>(r => setTimeout(r, delayMs));
+    }
+    try {
+      const response = await client.complete(prompt, opts);
+      const durationMs = Date.now() - start;
+      logger.info(`Agent ${name} completed`, { durationMs, attempt });
+      return {
+        agent: name,
+        prompt,
+        response,
+        model: agent.model,
+        durationMs,
+      };
+    } catch (e) {
+      lastError = e as Error;
+    }
+  }
 
-  return {
-    agent: name,
-    prompt,
-    response,
-    model: agent.model,
-    durationMs,
-  };
+  throw lastError ?? new Error(`Agent ${name} failed after ${MAX_RETRIES + 1} attempts`);
 }
 
 /**

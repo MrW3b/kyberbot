@@ -219,8 +219,8 @@ export function createSleepCommand(): Command {
       let minutesSinceSuccess: number | null = null;
       let overdue = false;
       if (lastCompleted) {
-        minutesSinceSuccess = Math.round((Date.now() - new Date(lastCompleted.completed_at).getTime()) / 60000);
-        overdue = minutesSinceSuccess > 90;
+        minutesSinceSuccess = Math.round((Date.now() - new Date(lastCompleted.completed_at.replace(' ', 'T') + 'Z').getTime()) / 60000);
+        overdue = minutesSinceSuccess > 180; // SF-012: cycle is 180min; 90 was false-alarming; parse as UTC (bare SQLite strings are UTC)
       }
 
       const health = {
