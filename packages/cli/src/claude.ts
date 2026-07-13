@@ -26,7 +26,7 @@ export interface ImageInput {
 }
 
 export interface CompleteOptions {
-  model?: 'haiku' | 'sonnet' | 'opus';
+  model?: 'haiku' | 'sonnet' | 'opus' | 'fable';
   system?: string;
   maxTokens?: number;
   maxTurns?: number;
@@ -66,10 +66,13 @@ export interface CompleteOptions {
 
 // Model ID mapping. Update when Anthropic publishes new minor versions —
 // the shorthand ('opus') resolves to the current latest model ID here.
+// 'fable' is the reserved top-tier ceiling — available for deliberate
+// high-blast-radius escalation (e.g. Aizen/Sherlock), never a standing default.
 const MODEL_IDS: Record<string, string> = {
   haiku: 'claude-haiku-4-5',
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-7',
+  sonnet: 'claude-sonnet-5',
+  opus: 'claude-opus-4-8',
+  fable: 'claude-fable-5',
 };
 
 /**
@@ -124,7 +127,7 @@ export class ClaudeClient {
   async complete(prompt: string, opts: CompleteOptions = {}): Promise<string> {
     // Always resolve model — never let subprocess/agent-sdk fall back to CLI defaults
     if (!opts.model) {
-      opts.model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus';
+      opts.model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus' | 'fable';
     }
 
     // All server-process calls should use subprocess for memory isolation.
@@ -139,7 +142,7 @@ export class ClaudeClient {
    * Multi-turn chat
    */
   async chat(messages: Message[], system: string): Promise<string> {
-    const model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus';
+    const model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus' | 'fable';
 
     if (this.mode === 'sdk' && this.sdk) {
       return this.chatSDK(messages, system, model);
@@ -162,7 +165,7 @@ export class ClaudeClient {
     opts: CompleteOptions = {}
   ): Promise<string> {
     if (!opts.model) {
-      opts.model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus';
+      opts.model = (getClaudeModel() || 'opus') as 'haiku' | 'sonnet' | 'opus' | 'fable';
     }
     return this.completeSubprocessWithImages(prompt, images, opts);
   }
