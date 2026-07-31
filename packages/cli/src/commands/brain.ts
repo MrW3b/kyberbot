@@ -15,7 +15,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { basename, resolve } from 'path';
-import { getRoot } from '../config.js';
+import { getRoot, getModelFor } from '../config.js';
 import { createLogger } from '../logger.js';
 import {
   initializeEmbeddings,
@@ -77,7 +77,7 @@ export function createBrainCommand(): Command {
         const client = getClaudeClient();
         const answer = await client.complete(fullPrompt, {
           system: systemPrompt,
-          model: 'haiku',
+          model: getModelFor('brain', 'haiku'),
         });
 
         console.log(chalk.cyan.bold('Answer:'));

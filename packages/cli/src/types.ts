@@ -35,7 +35,7 @@ export interface IdentityConfig {
   };
   /**
    * Model used for heartbeat and orchestration (CEO/worker) Claude calls.
-   * Defaults to 'opus' (Claude Opus 4.7) if unset — heartbeats are how
+   * Defaults to 'opus' (Claude Opus 4.8) if unset — heartbeats are how
    * agents do their actual long-running advanced work (multi-pass
    * refactors, audits, research), so the better model is the right
    * default. Set explicitly to 'sonnet' or 'haiku' if you want to trade
@@ -80,6 +80,16 @@ export interface IdentityConfig {
   claude?: {
     mode: 'subscription' | 'sdk';
     model?: string;
+    /**
+     * Per-surface model overrides. Falls back to `model` (and ultimately 'opus')
+     * when a surface is not specified. Heartbeat has its own top-level
+     * `heartbeat_model` and is NOT read from this map.
+     */
+    models?: {
+      channel?: 'haiku' | 'sonnet' | 'opus';
+      agent_default?: 'haiku' | 'sonnet' | 'opus';
+      brain?: 'haiku' | 'sonnet' | 'opus';
+    };
   };
   memory?: {
     entity_stoplist?: string[];

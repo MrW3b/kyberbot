@@ -17,7 +17,7 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import yaml from 'js-yaml';
 import { createLogger } from '../../logger.js';
-import { getClaudeClient } from '../../claude.js';
+import { getClaudeClient, ImageInput } from '../../claude.js';
 import { getAgentNameForRoot } from '../../config.js';
 import { Channel, ChannelMessage } from './types.js';
 import { storeConversation } from '../../brain/store-conversation.js';
@@ -178,6 +178,60 @@ export class TelegramChannel implements Channel {
         } finally {
           stopAffordance();
         }
+      }
+    });
+
+    // ── Photo handler ──────────────────────────────────────────────────
+    this.bot.on('message:photo', async (ctx) => {
+      const chatId = ctx.chat.id;
+
+      // Ignore during verification or from non-owner
+      if (this.verificationCode || chatId !== this.ownerChatId) return;
+
+      const photos = ctx.message.photo;
+      const largest = photos[photos.length - 1];
+      const caption = ctx.message.caption?.trim() || '';
+      const prompt = caption || 'What is in this image?';
+
+      const convoId = `telegram:${chatId}`;
+      try {
+        const fileInfo = await ctx.api.getFile(largest.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${this.config.bot_token}/${fileInfo.file_path}`;
+
+        const res = await fetch(fileUrl);
+        if (!res.ok) throw new Error(`Failed to download photo: ${res.status}`);
+        const arrayBuf = await res.arrayBuffer();
+        const base64 = Buffer.from(arrayBuf).toString('base64');
+
+        const client = getClaudeClient();
+        const systemPrompt = await buildChannelSystemPrompt('telegram');
+        const images: ImageInput[] = [{ data: base64, mediaType: 'image/jpeg' }];
+        const reply = await client.completeWithImages(prompt, images, { system: systemPrompt, cwd: this.root });
+
+        if (!reply || reply.trim().length === 0) {
+          logger.warn('Claude returned empty response for photo');
+          return;
+        }
+
+        pushUserMessage(convoId, `[Image] ${caption}`);
+        pushAssistantMessage(convoId, reply);
+
+        if (reply.length > 4096) {
+          const chunks = this.chunkMessage(reply, 4096);
+          for (const chunk of chunks) await ctx.reply(chunk);
+        } else {
+          await ctx.reply(reply);
+        }
+
+        storeConversation(this.root, {
+          prompt: `[Image] ${caption}`,
+          response: reply,
+          channel: 'telegram',
+          metadata: { chatId, userId: ctx.from?.id },
+        }, { skipEmbeddings: true }).catch((err) => logger.warn('Memory storage failed', { error: String(err) }));
+      } catch (error) {
+        logger.error('Failed to process Telegram photo', { error: String(error) });
+        await ctx.reply('Sorry, I had trouble processing that image.');
       }
     });
 

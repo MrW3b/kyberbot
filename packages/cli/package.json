@@ -31,7 +31,7 @@
     "js-yaml": "^4.1.0",
     "libsql": "0.5.29",
     "openai": "^4.73.0",
-    "uuid": "^10.0.0"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

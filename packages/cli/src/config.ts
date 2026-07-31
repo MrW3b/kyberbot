@@ -135,6 +135,41 @@ export function getClaudeModel(): string {
 }
 
 /**
+ * Surface names for per-surface model routing. Heartbeat is intentionally
+ * absent — it has its own top-level `heartbeat_model` config field.
+ */
+export type ModelSurface = 'channel' | 'agent_default' | 'brain';
+
+/**
+ * Resolve the Claude model to use for a given surface. Reads
+ * `claude.models[surface]` from identity.yaml; if unset, uses `surfaceDefault`
+ * (the surface's historical/sensible default), then `claude.model`, then 'opus'.
+ *
+ * Pass `surfaceDefault` to preserve a surface's existing low-tier default
+ * (e.g. brain query has always been 'haiku' — don't let it silently upgrade
+ * to opus when claude.model is opus). Omit for surfaces that should follow
+ * the global `claude.model` (e.g. channel replies, agent spawning).
+ */
+export function getModelFor(
+  surface: ModelSurface,
+  surfaceDefault?: 'haiku' | 'sonnet' | 'opus'
+): 'haiku' | 'sonnet' | 'opus' {
+  try {
+    const claude = getIdentity().claude;
+    const override = claude?.models?.[surface];
+    if (override === 'haiku' || override === 'sonnet' || override === 'opus') {
+      return override;
+    }
+    if (surfaceDefault) return surfaceDefault;
+    const fallback = claude?.model;
+    if (fallback === 'haiku' || fallback === 'sonnet' || fallback === 'opus') {
+      return fallback;
+    }
+  } catch { /* fall through */ }
+  return surfaceDefault ?? 'opus';
+}
+
+/**
  * Get the model to use for heartbeat (scheduled task execution) and the
  * orchestration CEO/worker heartbeats. Opus by default — heartbeats are
  * where agents do their real long-running work (multi-pass refactors,

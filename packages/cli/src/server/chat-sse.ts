@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import type { Request, Response } from 'express';
-import { getClaudeModel } from '../config.js';
+import { getModelFor } from '../config.js';
 import { createLogger } from '../logger.js';
 import { buildChannelSystemPrompt } from './channels/system-prompt.js';
 import { pushUserMessage, pushAssistantMessage, buildPromptWithHistory } from './channels/conversation-history.js';
@@ -134,7 +134,7 @@ export async function chatSseHandler(req: Request, res: Response, root: string) 
 
   const cwd = root;
 
-  const model = getClaudeModel() || 'opus';
+  const model = getModelFor('channel');
 
   // Persist user message
   if (sessionId) {

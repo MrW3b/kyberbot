@@ -315,7 +315,7 @@ export async function getFactById(
 
 /**
  * Retrieve facts associated with a given entity name.
- * Searches entities_json for a case-insensitive match.
+ * Exact, case-insensitive match against entities_json array members.
  */
 export async function getFactsForEntity(
   root: string,
@@ -325,21 +325,22 @@ export async function getFactsForEntity(
   const { latestOnly = true, limit = 20, category } = options;
   const db = await getTimelineDb(root);
 
-  // SQLite JSON: search entities_json for the entity name (case-insensitive)
-  // Escape LIKE metacharacters in user input
-  const escapedEntity = entity.toLowerCase().replace(/[%_\\]/g, ch => `\\${ch}`);
-  const entityPattern = `%${escapedEntity}%`;
-
+  // Exact membership match via json_each — a substring LIKE would also match
+  // entities whose names merely contain the queried name (e.g. "Alvin" would
+  // pull facts tagged "Alvin Goh"), attributing facts to the wrong entity.
   let sql = `
     SELECT id, content, source_path, source_conversation_id, entities_json,
            timestamp, confidence, category, created_at,
            COALESCE(is_latest, 1) as is_latest,
            superseded_by
     FROM facts
-    WHERE LOWER(entities_json) LIKE ? ESCAPE '\\'
+    WHERE EXISTS (
+        SELECT 1 FROM json_each(COALESCE(NULLIF(facts.entities_json, ''), '[]'))
+        WHERE LOWER(json_each.value) = ?
+      )
       AND COALESCE(is_retracted, 0) = 0
   `;
-  const params: unknown[] = [entityPattern];
+  const params: unknown[] = [entity.toLowerCase()];
 
   if (latestOnly) {
     sql += ` AND COALESCE(is_latest, 1) = 1`;

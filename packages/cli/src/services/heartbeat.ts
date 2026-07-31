@@ -10,7 +10,7 @@
  * - Logs to logs/heartbeat.log
  */
 
-import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { createLogger } from '../logger.js';
 import { getIdentityForRoot, getHeartbeatModelForRoot } from '../config.js';
@@ -72,14 +72,183 @@ function parseHeartbeatTasks(content: string): ParsedTask[] {
 }
 
 /**
- * Decide whether a parsed task is due given its last-check timestamp.
- * Handles the common schedule phrasings used in HEARTBEAT.md templates:
- * `every Nm|Nh|Nd`, `daily`, `weekly`, `monthly`. Unknown syntax is
- * treated as "may be due" — conservative so we don't silently suppress
- * real work.
+ * Resolve a schedule's timezone token. Accepts IANA names (`Asia/Singapore`),
+ * common abbreviations (`SGT`, `UTC`, `PT`, `ET`), or falls back to the agent's
+ * default timezone when no token is given.
  */
-function isTaskDue(task: ParsedTask, lastCheckIso: string | undefined, now: Date): boolean {
-  if (!lastCheckIso) return true; // Never run — run now
+function resolveTz(token: string | undefined, fallback: string): string {
+  if (!token) return fallback;
+  const t = token.toLowerCase();
+  const map: Record<string, string> = {
+    sgt: 'Asia/Singapore',
+    utc: 'UTC',
+    gmt: 'UTC',
+    pt: 'America/Los_Angeles',
+    pst: 'America/Los_Angeles',
+    pdt: 'America/Los_Angeles',
+    et: 'America/New_York',
+    est: 'America/New_York',
+    edt: 'America/New_York',
+    ct: 'America/Chicago',
+    mt: 'America/Denver',
+  };
+  return map[t] ?? token;
+}
+
+function parseDayOfWeek(d: string): number | null {
+  const map: Record<string, number> = {
+    sun: 0, sunday: 0,
+    mon: 1, monday: 1,
+    tue: 2, tues: 2, tuesday: 2,
+    wed: 3, wednesday: 3,
+    thu: 4, thur: 4, thurs: 4, thursday: 4,
+    fri: 5, friday: 5,
+    sat: 6, saturday: 6,
+  };
+  return map[d.toLowerCase()] ?? null;
+}
+
+/**
+ * Get the UTC offset (minutes) for the given IANA timezone at the given instant.
+ */
+function tzOffsetMinutes(tz: string, at: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    timeZoneName: 'shortOffset',
+  }).formatToParts(at);
+  const tzName = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+  const m = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  if (!m) return 0;
+  const sign = m[1] === '+' ? 1 : -1;
+  return sign * (Number(m[2]) * 60 + Number(m[3] ?? 0));
+}
+
+/**
+ * Build the UTC Date for "(today + dayOffset) at HH:MM in tz".
+ * `today` is the calendar date in `tz` derived from `now`.
+ */
+function localDateTime(now: Date, tz: string, dayOffset: number, h: number, m: number): Date {
+  const base = new Date(now.getTime() + dayOffset * 86_400_000);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(base);
+  const y = parts.find((p) => p.type === 'year')!.value;
+  const mo = parts.find((p) => p.type === 'month')!.value;
+  const d = parts.find((p) => p.type === 'day')!.value;
+  const off = tzOffsetMinutes(tz, base);
+  const sign = off >= 0 ? '+' : '-';
+  const abs = Math.abs(off);
+  const offH = String(Math.floor(abs / 60)).padStart(2, '0');
+  const offM = String(abs % 60).padStart(2, '0');
+  return new Date(
+    `${y}-${mo}-${d}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00${sign}${offH}:${offM}`,
+  );
+}
+
+/**
+ * Compute the most recent target instant at-or-before `now` for a time-of-day
+ * schedule (e.g. `daily 21:00 SGT`, `weekly Sunday 20:00 SGT`). Returns null
+ * when the schedule has no time-of-day component we recognise.
+ */
+function mostRecentTargetInstant(schedule: string, fallbackTz: string, now: Date): Date | null {
+  const s = schedule.toLowerCase();
+
+  const dailyTimed = s.match(/^daily\s+(\d{1,2}):(\d{2})(?:\s+([a-z/_+\-0-9]+))?/);
+  if (dailyTimed) {
+    const tz = resolveTz(dailyTimed[3], fallbackTz);
+    const todayTarget = localDateTime(now, tz, 0, Number(dailyTimed[1]), Number(dailyTimed[2]));
+    if (todayTarget.getTime() <= now.getTime()) return todayTarget;
+    return localDateTime(now, tz, -1, Number(dailyTimed[1]), Number(dailyTimed[2]));
+  }
+
+  const weeklyTimed = s.match(
+    /^weekly\s+([a-z\-]+)\s+(\d{1,2}):(\d{2})(?:\s+([a-z/_+\-0-9]+))?/,
+  );
+  if (weeklyTimed) {
+    const targetDow = parseDayOfWeek(weeklyTimed[1]);
+    if (targetDow === null) return null;
+    const tz = resolveTz(weeklyTimed[4], fallbackTz);
+    const dowStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
+      .format(now)
+      .toLowerCase()
+      .slice(0, 3);
+    const todayDow = parseDayOfWeek(dowStr) ?? 0;
+    const daysBack = (todayDow - targetDow + 7) % 7;
+    let candidate = localDateTime(now, tz, -daysBack, Number(weeklyTimed[2]), Number(weeklyTimed[3]));
+    if (candidate.getTime() > now.getTime()) {
+      candidate = new Date(candidate.getTime() - 7 * 86_400_000);
+    }
+    return candidate;
+  }
+
+  // monthly last-DOW HH:MM [TZ] — e.g. `monthly last-sunday 20:00 SGT`
+  const monthlyLastDow = s.match(
+    /^monthly\s+last-([a-z]+)\s+(\d{1,2}):(\d{2})(?:\s+([a-z/_+\-0-9]+))?/,
+  );
+  if (monthlyLastDow) {
+    const targetDow = parseDayOfWeek(monthlyLastDow[1]);
+    if (targetDow === null) return null;
+    const tz = resolveTz(monthlyLastDow[4], fallbackTz);
+    const h = Number(monthlyLastDow[2]);
+    const m = Number(monthlyLastDow[3]);
+    const ymdParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(now);
+    const year = Number(ymdParts.find((p) => p.type === 'year')!.value);
+    const month = Number(ymdParts.find((p) => p.type === 'month')!.value); // 1-12
+
+    const computeLastDowOfMonth = (y: number, mo: number): Date | null => {
+      const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate(); // last day of (y,mo)
+      for (let day = lastDay; day >= lastDay - 6; day--) {
+        const probe = new Date(Date.UTC(y, mo - 1, day, 12, 0));
+        const dowStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
+          .format(probe)
+          .toLowerCase()
+          .slice(0, 3);
+        if (parseDayOfWeek(dowStr) === targetDow) {
+          const off = tzOffsetMinutes(tz, probe);
+          const sign = off >= 0 ? '+' : '-';
+          const abs = Math.abs(off);
+          const offH = String(Math.floor(abs / 60)).padStart(2, '0');
+          const offM = String(abs % 60).padStart(2, '0');
+          return new Date(
+            `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00${sign}${offH}:${offM}`,
+          );
+        }
+      }
+      return null;
+    };
+
+    const thisMonthTarget = computeLastDowOfMonth(year, month);
+    if (thisMonthTarget && thisMonthTarget.getTime() <= now.getTime()) return thisMonthTarget;
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    return computeLastDowOfMonth(prevYear, prevMonth);
+  }
+
+  return null;
+}
+
+/**
+ * Decide whether a parsed task is due given its last-check timestamp.
+ * Handles `every Nm|Nh|Nd`, `daily [HH:MM TZ]`, `weekly [DAY HH:MM TZ]`, and
+ * `monthly`. Time-of-day variants compare against the most recent target
+ * instant, so `daily 21:00 SGT` does not fire at 02:00 SGT just because >24h
+ * elapsed. Unknown syntax is conservatively treated as due.
+ */
+function isTaskDue(
+  task: ParsedTask,
+  lastCheckIso: string | undefined,
+  now: Date,
+  fallbackTz: string,
+): boolean {
+  if (!lastCheckIso) return true;
   const lastCheck = new Date(lastCheckIso);
   if (isNaN(lastCheck.getTime())) return true;
   const elapsedMs = now.getTime() - lastCheck.getTime();
@@ -93,12 +262,69 @@ function isTaskDue(task: ParsedTask, lastCheckIso: string | undefined, now: Date
     return elapsedMs >= required;
   }
 
+  const target = mostRecentTargetInstant(schedule, fallbackTz, now);
+  if (target) return lastCheck.getTime() < target.getTime();
+
   if (schedule.startsWith('daily')) return elapsedMs >= 24 * 3_600_000;
   if (schedule.startsWith('weekly')) return elapsedMs >= 7 * 24 * 3_600_000;
   if (schedule.startsWith('monthly')) return elapsedMs >= 28 * 24 * 3_600_000;
 
-  // Unrecognized — conservative: treat as due
   return true;
+}
+
+/**
+ * Among due tasks, pick the one with the largest "overdue" gap — measured
+ * as `now - target` for time-of-day schedules, or `elapsed - required` for
+ * interval schedules. Returns null when nothing is due or no task has a
+ * parseable schedule.
+ */
+function pickMostOverdueTask(
+  tasks: ParsedTask[],
+  lastChecks: Record<string, string | undefined>,
+  now: Date,
+  fallbackTz: string,
+): ParsedTask | null {
+  let winner: ParsedTask | null = null;
+  let winnerGap = -Infinity;
+  for (const t of tasks) {
+    if (!isTaskDue(t, lastChecks[t.name], now, fallbackTz)) continue;
+    const lastIso = lastChecks[t.name];
+    const last = lastIso ? new Date(lastIso) : null;
+    let gap: number;
+    const target = mostRecentTargetInstant(t.schedule.toLowerCase(), fallbackTz, now);
+    if (target && last && !isNaN(last.getTime())) {
+      gap = now.getTime() - target.getTime() + Math.max(0, target.getTime() - last.getTime());
+    } else if (last && !isNaN(last.getTime())) {
+      gap = now.getTime() - last.getTime();
+    } else {
+      gap = Number.MAX_SAFE_INTEGER; // Never run — highest priority
+    }
+    if (gap > winnerGap) {
+      winnerGap = gap;
+      winner = t;
+    }
+  }
+  return winner;
+}
+
+interface HeartbeatState {
+  lastChecks: Record<string, string>;
+}
+
+function readState(root: string): HeartbeatState {
+  const stateFile = join(root, 'heartbeat-state.json');
+  if (!existsSync(stateFile)) return { lastChecks: {} };
+  try {
+    const parsed = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    return { lastChecks: parsed.lastChecks ?? {} };
+  } catch {
+    return { lastChecks: {} };
+  }
+}
+
+function writeState(root: string, state: HeartbeatState): void {
+  const stateFile = join(root, 'heartbeat-state.json');
+  writeFileSync(stateFile, JSON.stringify(state, null, 2), 'utf-8');
 }
 
 export function markBusy(isBusy: boolean): void {
@@ -207,32 +433,23 @@ async function tick(root: string): Promise<void> {
     return;
   }
 
-  // Short-circuit: if no task's Schedule is due yet, skip the Claude
-  // invocation entirely. Heartbeat ticks into an empty queue used to
-  // still spawn a full (Sonnet) subprocess just to reply HEARTBEAT_OK —
-  // token waste for an idle fleet. Conservative: if we can't parse a
-  // task's schedule, we assume it may be due so Claude still runs.
-  try {
-    const stateFileEarly = join(root, 'heartbeat-state.json');
-    const stateEarly = existsSync(stateFileEarly)
-      ? JSON.parse(readFileSync(stateFileEarly, 'utf-8'))
-      : { lastChecks: {} };
-    const tasks = parseHeartbeatTasks(content);
-    if (tasks.length > 0 && !tasks.some((t) => isTaskDue(t, stateEarly.lastChecks?.[t.name], new Date()))) {
-      logger.debug(`Heartbeat skipped — no task due yet (${tasks.length} scheduled)`);
-      return;
-    }
-  } catch (err) {
-    // Parse/IO error — fall through to the Claude path; conservative
-    logger.debug('Heartbeat due-check errored, proceeding to Claude', { error: String(err) });
+  // Deterministic task selection: parse schedules, pick the single most
+  // overdue task, and tell Claude exactly which one to run. Before this,
+  // task selection was delegated to Claude — which led to brain-health
+  // monopolising every tick because it was always seen as "due" while
+  // time-of-day tasks (e.g. `daily 21:00 SGT`) were misinterpreted.
+  const fallbackTz =
+    getIdentityForRoot(root).timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tasks = parseHeartbeatTasks(content);
+  let state = readState(root);
+  const dispatched = pickMostOverdueTask(tasks, state.lastChecks, new Date(), fallbackTz);
+  if (!dispatched) {
+    logger.debug(`Heartbeat skipped — no task due yet (${tasks.length} scheduled)`);
+    return;
   }
+  logger.info(`Heartbeat dispatching task: ${dispatched.name}`);
 
   try {
-    const stateFile = join(root, 'heartbeat-state.json');
-    const state = existsSync(stateFile)
-      ? JSON.parse(readFileSync(stateFile, 'utf-8'))
-      : { lastChecks: {} };
-
     // Extract referenced skills from tasks and inline their content
     const skillSections: string[] = [];
     const skillRefs = content.match(/\*\*Skill\*\*:\s*(\S+)/g);
@@ -254,24 +471,24 @@ async function tick(root: string): Promise<void> {
     }
 
     const promptParts = [
-      'You are executing a heartbeat task. Follow these instructions exactly:',
+      'You are executing a heartbeat task. The scheduler has already picked the task —',
+      `you MUST execute exactly this one and no other: "${dispatched.name}".`,
       '',
-      '1. Read the HEARTBEAT.md tasks below and the heartbeat-state.json timestamps.',
-      '2. Determine which task is most overdue based on its Schedule and last run time.',
-      '3. If a task has a **Skill** reference, the full skill instructions are included below — follow them step by step.',
-      '4. If a task has no **Skill** reference, execute the **Action** directly.',
-      '5. After completing the task, update heartbeat-state.json with the current time.',
-      '6. If nothing needs attention, reply with exactly: HEARTBEAT_OK',
+      '1. Locate the task block in HEARTBEAT.md below.',
+      '2. If it has a **Skill** reference, the full skill instructions are included — follow them step by step.',
+      '3. If it has no **Skill** reference, execute the **Action** verbatim.',
+      '4. Do NOT update heartbeat-state.json — the scheduler records the run time automatically.',
+      '5. If the task itself decides to skip (e.g. "skip Sunday" condition), reply: HEARTBEAT_OK',
       '',
       '--- HEARTBEAT.md ---',
       content,
       '',
-      '--- heartbeat-state.json ---',
+      '--- heartbeat-state.json (read-only reference) ---',
       JSON.stringify(state, null, 2),
       '',
       ...(skillSections.length > 0 ? skillSections : []),
       `Current time: ${new Date().toISOString()}`,
-      `Timezone: ${getIdentityForRoot(root).timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+      `Timezone: ${fallbackTz}`,
     ];
 
     // Fleet awareness — let heartbeat know about other agents
@@ -338,9 +555,9 @@ async function tick(root: string): Promise<void> {
 
     // Suppress HEARTBEAT_OK
     if (result.trim() === 'HEARTBEAT_OK') {
-      logger.debug('Heartbeat: nothing actionable');
+      logger.debug(`Heartbeat: task ${dispatched.name} returned OK (skipped by task logic)`);
     } else {
-      logger.info('Heartbeat result:', { result: result.substring(0, 200), heapMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
+      logger.info('Heartbeat result:', { task: dispatched.name, result: result.substring(0, 200), heapMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
 
       // Log to heartbeat log
       const heartbeatLog = join(root, 'logs', 'heartbeat.log');
@@ -348,7 +565,7 @@ async function tick(root: string): Promise<void> {
       mkdirSync(logDir, { recursive: true });
       appendFileSync(
         heartbeatLog,
-        `\n--- ${new Date().toISOString()} ---\n${result}\n`,
+        `\n--- ${new Date().toISOString()} [${dispatched.name}] ---\n${result}\n`,
         'utf-8'
       );
 
@@ -359,8 +576,19 @@ async function tick(root: string): Promise<void> {
         channel: 'heartbeat',
       }).catch((err) => logger.warn('Memory storage failed', { error: String(err) }));
     }
+
+    // Canonical state update: scheduler owns the timestamp, regardless of
+    // whether Claude also wrote anywhere. Re-read first to merge any
+    // concurrent edits from the task itself.
+    try {
+      state = readState(root);
+      state.lastChecks[dispatched.name] = new Date().toISOString();
+      writeState(root, state);
+    } catch (err) {
+      logger.warn('Failed to record heartbeat run time', { task: dispatched.name, error: String(err) });
+    }
   } catch (error) {
-    logger.error('Heartbeat tick failed', { error: String(error) });
+    logger.error('Heartbeat tick failed', { task: dispatched.name, error: String(error) });
   }
 }
 

@@ -24,3 +24,10 @@ coverage/
 .claude/scripts/.cache/pulse/*.json
 .claude/delamains/*/telemetry/events.jsonl
 .claude/delamains/*/dispatcher/control/drain-request.json
+
+# accidental nested repo copy
+/kyberbot/
+
+# personal + client data — this fork is PUBLIC, never commit these
+template/brain/chris/
+template/brain/buildwithapex/
