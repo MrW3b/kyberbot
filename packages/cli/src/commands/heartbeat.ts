@@ -39,7 +39,7 @@ function parseHeartbeatTasks(content: string): ParsedTask[] {
     let action = '';
 
     for (const line of lines) {
-      const cadenceMatch = line.match(/\*\*Cadence\*\*:\s*(.+)/);
+      const cadenceMatch = line.match(/\*\*(?:Cadence|Schedule)\*\*:\s*(.+)/);
       if (cadenceMatch) cadence = cadenceMatch[1].trim();
 
       const windowMatch = line.match(/\*\*Window\*\*:\s*(.+)/);
