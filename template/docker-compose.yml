@@ -7,7 +7,10 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ./data/chromadb:/chroma/chroma
+      # chromadb/chroma:latest persists to /data internally (not /chroma/chroma —
+      # that was an older image's default and silently changed; see
+      # packages/cli/src/brain/chromadb.ts CHROMA_DATA_MOUNT_TARGET for detail).
+      - ./data/chromadb:/data
     environment:
       - ANONYMIZED_TELEMETRY=false
       - IS_PERSISTENT=TRUE
