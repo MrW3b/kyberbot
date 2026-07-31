@@ -164,6 +164,79 @@ describe('chunkText (via indexDocument)', () => {
     // should produce at least 2 chunks
     expect(count).toBeGreaterThanOrEqual(2);
   });
+
+  it('should hard-split an oversized unpunctuated segment instead of passing it through as one giant chunk (SF-030)', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const { indexDocument, initializeEmbeddings } = await import('./embeddings.js');
+
+    mockHeartbeat.mockResolvedValue(true);
+    mockCollectionCount.mockResolvedValue(0);
+    mockCollectionUpsert.mockResolvedValue(undefined);
+    mockGetOrCreateCollection.mockResolvedValue({
+      count: mockCollectionCount,
+      upsert: mockCollectionUpsert,
+      query: mockCollectionQuery,
+    });
+
+    await initializeEmbeddings();
+
+    // Simulate an unpunctuated transcript: one giant "sentence" (no . ! ?)
+    // tens of thousands of characters long, well over any reasonable chunk
+    // size and well over the embedding API's 8192-token ceiling.
+    const words = Array.from({ length: 6000 }, (_, i) => `word${i}`);
+    const oversizedBlob = words.join(' '); // ~35,000+ chars, zero sentence breaks
+
+    mockCreate.mockImplementation(async (args: { input: string | string[] }) => {
+      const inputs = Array.isArray(args.input) ? args.input : [args.input];
+      return { data: inputs.map(() => ({ embedding: [0.1, 0.2] })) };
+    });
+
+    const count = await indexDocument('/tmp/test-root', 'doc-5', oversizedBlob, {
+      type: 'transcript',
+      source_path: 'huge-transcript.md',
+      timestamp: new Date().toISOString(),
+    });
+
+    // Must produce many chunks, not one enormous one.
+    expect(count).toBeGreaterThan(50);
+
+    const upsertCall = mockCollectionUpsert.mock.calls[0][0];
+    const CHUNK_SIZE = 300; // CONFIG.CHUNK_SIZE — every chunk must stay at or under this
+    for (const doc of upsertCall.documents as string[]) {
+      expect(doc.length).toBeLessThanOrEqual(CHUNK_SIZE);
+    }
+  });
+
+  it('should throw (not silently return 0) when the embedding API rejects the input (SF-030)', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const { indexDocument, initializeEmbeddings } = await import('./embeddings.js');
+
+    mockHeartbeat.mockResolvedValue(true);
+    mockCollectionCount.mockResolvedValue(0);
+    mockCollectionUpsert.mockResolvedValue(undefined);
+    mockGetOrCreateCollection.mockResolvedValue({
+      count: mockCollectionCount,
+      upsert: mockCollectionUpsert,
+      query: mockCollectionQuery,
+    });
+
+    await initializeEmbeddings();
+
+    // Simulate the API rejection this bug used to swallow: a 400 on
+    // "maximum input length is 8192 tokens" (or any other embed failure).
+    mockCreate.mockRejectedValue(new Error("400 Invalid 'input[0]': maximum input length is 8192 tokens."));
+
+    await expect(
+      indexDocument('/tmp/test-root', 'doc-6', 'This document will fail to embed for the purposes of this test.', {
+        type: 'note',
+        source_path: 'test6.md',
+        timestamp: new Date().toISOString(),
+      })
+    ).rejects.toThrow();
+
+    // The failure must never reach the caller as a silent success.
+    expect(mockCollectionUpsert).not.toHaveBeenCalled();
+  });
 });
 
 describe('initializeEmbeddings', () => {

@@ -145,6 +145,16 @@ export function createBrainCommand(): Command {
           timestamp: new Date().toISOString(),
         });
 
+        // 0 chunks is never a success, whatever produced it — indexDocument
+        // now throws on real embedding/upsert failures (see SF-030), but
+        // still legitimately returns 0 for its own internal skip paths
+        // (ChromaDB unavailable, content too short). Neither of those should
+        // ever print in green as if the file were indexed.
+        if (chunks === 0) {
+          console.error(chalk.red(`FAILED to index "${title}" - 0 chunks created.`));
+          process.exit(1);
+        }
+
         console.log(chalk.green(`Indexed "${title}" - ${chunks} chunk(s) created.`));
         console.log('');
       } catch (error) {

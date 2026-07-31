@@ -237,6 +237,48 @@ interface TextChunk {
   index: number;
 }
 
+/**
+ * Force-split a single oversized segment (a "sentence" per chunkText's own
+ * punctuation-based split, that is itself larger than a full chunk) into
+ * pieces no longer than maxLen. Packs whole words greedily; a single word
+ * longer than maxLen on its own (a URL, a base64 blob, run-on captions with
+ * no spaces) gets hard-sliced so nothing downstream can ever exceed maxLen
+ * regardless of source punctuation or whitespace.
+ *
+ * This is the fix for SF-030 (see custodian-craft.md, 2026-07-31 /
+ * finding-chromadb-chunker-silent-embed-failure-jul28.md): unpunctuated
+ * transcript text produced a single "sentence" tens of thousands of
+ * characters long, which chunkText previously passed through untouched —
+ * either rejected outright by the embedding API's 8192-token ceiling, or
+ * accepted as one enormous, useless chunk that matches everything weakly.
+ */
+function splitOversizedSegment(segment: string, maxLen: number): string[] {
+  const pieces: string[] = [];
+  const words = segment.split(/\s+/).filter(Boolean);
+  let current = '';
+
+  for (const rawWord of words) {
+    let word = rawWord;
+    while (word.length > maxLen) {
+      if (current) {
+        pieces.push(current);
+        current = '';
+      }
+      pieces.push(word.slice(0, maxLen));
+      word = word.slice(maxLen);
+    }
+    if (current.length + word.length + 1 > maxLen && current.length > 0) {
+      pieces.push(current);
+      current = word;
+    } else {
+      current += (current ? ' ' : '') + word;
+    }
+  }
+  if (current) pieces.push(current);
+
+  return pieces;
+}
+
 function chunkText(text: string): TextChunk[] {
   const chunks: TextChunk[] = [];
   const sentences = text.split(/(?<=[.!?])\s+/);
@@ -244,6 +286,20 @@ function chunkText(text: string): TextChunk[] {
   let chunkIndex = 0;
 
   for (const sentence of sentences) {
+    if (sentence.length > CONFIG.CHUNK_SIZE) {
+      // A single punctuation-delimited "sentence" that's itself bigger than
+      // a whole chunk — flush whatever's pending, then hard-split this
+      // segment on its own. See splitOversizedSegment() doc comment.
+      if (currentChunk.trim()) {
+        chunks.push({ text: currentChunk.trim(), index: chunkIndex++ });
+        currentChunk = '';
+      }
+      for (const piece of splitOversizedSegment(sentence, CONFIG.CHUNK_SIZE)) {
+        chunks.push({ text: piece, index: chunkIndex++ });
+      }
+      continue;
+    }
+
     if (currentChunk.length + sentence.length > CONFIG.CHUNK_SIZE && currentChunk.length > 0) {
       chunks.push({ text: currentChunk.trim(), index: chunkIndex++ });
 
@@ -338,8 +394,16 @@ export async function indexDocument(
     logger.info(`Indexed: ${id} (${chunks.length} chunks)`);
     return chunks.length;
   } catch (error) {
+    // Do NOT swallow this into a `return 0` — that's what let a 400 from
+    // the embeddings API (oversized input, rate limit, bad key, etc.) print
+    // as "Indexed ... - 0 chunk(s) created" in green with exit code 0. Every
+    // caller either treats indexDocument as best-effort with its own
+    // try/catch (store-conversation.ts's two call sites) or needs the
+    // failure to be loud (commands/brain.ts's `add`, which has no catch of
+    // its own around this call and relies on this throw reaching its outer
+    // try/catch to print red + exit(1)). See SF-030 / custodian-log 2026-07-31.
     logger.error(`Failed to index ${id}`, { error: String(error) });
-    return 0;
+    throw error;
   }
 }
 
