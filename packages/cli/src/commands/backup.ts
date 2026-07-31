@@ -72,6 +72,46 @@ function getTemplateDir(): string {
   return join(__dirname, '..', '..', '..', '..', 'template');
 }
 
+/**
+ * Recursively mirror .md files from src into dest, preserving subdirectory
+ * structure (e.g. an `archive/` subfolder). Copy-only / additive — never
+ * deletes anything on the dest side, even if a file has disappeared from
+ * src (that class of drift is a separate, destructive decision left to a
+ * caller who's verified recoverability first; see `kyberbot backup verify`
+ * and the Alfred custodian log for the reasoning).
+ *
+ * Returns the total number of .md files copied across all directory levels.
+ */
+function copyMdTreeRecursive(src: string, dest: string): number {
+  mkdirSync(dest, { recursive: true });
+  let count = 0;
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const srcPath = join(src, entry.name);
+    const destPath = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += copyMdTreeRecursive(srcPath, destPath);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      copyFileSync(srcPath, destPath);
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Count .md files under dir, recursing into subdirectories. Read-only. */
+function countMdTreeRecursive(dir: string): number {
+  let count = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      count += countMdTreeRecursive(p);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      count++;
+    }
+  }
+  return count;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Subcommands
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -269,11 +309,8 @@ export function createBackupCommand(): Command {
 
       if (existsSync(memorySource)) {
         try {
-          const files = readdirSync(memorySource).filter(f => f.endsWith('.md'));
-          for (const file of files) {
-            copyFileSync(join(memorySource, file), join(memoryDest, file));
-          }
-          console.log(chalk.green(`   Synced ${files.length} memory file(s)`));
+          const count = copyMdTreeRecursive(memorySource, memoryDest);
+          console.log(chalk.green(`   Synced ${count} memory file(s) (recursive, incl. subdirectories)`));
         } catch (err) {
           console.log(chalk.yellow(`   Could not sync memory: ${err}`));
         }
@@ -436,10 +473,11 @@ export function createBackupCommand(): Command {
       console.log(chalk.dim('3. Claude Code memory'));
       const memoryDir = paths.claudeMemory;
       if (existsSync(memoryDir)) {
-        const mdFiles = readdirSync(memoryDir).filter(f => f.endsWith('.md'));
-        if (mdFiles.length > 0) {
-          pass(`Claude memory — ${mdFiles.length} files synced`);
-          if (mdFiles.includes('MEMORY.md')) {
+        const topLevelMdFiles = readdirSync(memoryDir).filter(f => f.endsWith('.md'));
+        const totalMdFiles = countMdTreeRecursive(memoryDir);
+        if (totalMdFiles > 0) {
+          pass(`Claude memory — ${totalMdFiles} files synced (${topLevelMdFiles.length} top-level, ${totalMdFiles - topLevelMdFiles.length} in subdirectories)`);
+          if (topLevelMdFiles.includes('MEMORY.md')) {
             pass('MEMORY.md index present');
           } else {
             warn('MEMORY.md index missing');
