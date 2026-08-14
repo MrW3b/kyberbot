@@ -33,13 +33,20 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
   const start = Date.now();
 
   const opts: CompleteOptions = {
-    model: agent.model as CompleteOptions['model'],
+    model: agent.model,
     system: systemPrompt,
     maxTurns: agent.maxTurns,
+    effort: agent.effort,
+    allowedTools: agent.allowedTools,
     subprocess: true,
   };
 
-  logger.info(`Spawning agent: ${name}`, { model: agent.model, maxTurns: agent.maxTurns });
+  logger.info(`Spawning agent: ${name}`, {
+    model: agent.model,
+    maxTurns: agent.maxTurns,
+    effort: agent.effort,
+    allowedTools: agent.allowedTools.length,
+  });
 
   const response = await client.complete(prompt, opts);
   const durationMs = Date.now() - start;
