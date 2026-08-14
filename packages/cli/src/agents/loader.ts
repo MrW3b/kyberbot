@@ -53,6 +53,7 @@ export function loadInstalledAgents(root?: string): InstalledAgent[] {
         role: manifest.role || '',
         path: agentPath,
         model: manifest.model || 'opus',
+        effort: manifest.effort,
         maxTurns: manifest['max-turns'] || 10,
         allowedTools: manifest['allowed-tools'] || [],
         systemPromptBody: body,

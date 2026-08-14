@@ -33,13 +33,20 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
   const start = Date.now();
 
   const opts: CompleteOptions = {
-    model: agent.model as CompleteOptions['model'],
+    model: agent.model,
     system: systemPrompt,
     maxTurns: agent.maxTurns,
+    effort: agent.effort,
+    allowedTools: agent.allowedTools,
     subprocess: true,
   };
 
-  logger.info(`Spawning agent: ${name}`, { model: agent.model, maxTurns: agent.maxTurns });
+  logger.info(`Spawning agent: ${name}`, {
+    model: agent.model,
+    maxTurns: agent.maxTurns,
+    effort: agent.effort,
+    allowedTools: agent.allowedTools.length,
+  });
 
   // SF-013 mode (2) — bounded retry for early transient failures.
   // The claude subprocess can exit within seconds with tiny stdout and no work done

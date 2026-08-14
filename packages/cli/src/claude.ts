@@ -26,10 +26,15 @@ export interface ImageInput {
 }
 
 export interface CompleteOptions {
-  model?: 'haiku' | 'sonnet' | 'opus' | 'fable';
+  /** Alias or full model ID (e.g. claude-opus-5) — passed to --model as-is. */
+  model?: 'haiku' | 'sonnet' | 'opus' | 'fable' | (string & {});
   system?: string;
   maxTokens?: number;
   maxTurns?: number;
+  /** Reasoning effort passed to --effort. Omit to inherit the session default. */
+  effort?: string;
+  /** Tool allowlist passed to --allowed-tools (permission-rule syntax supported). */
+  allowedTools?: string[];
   /** Callback for stdout chunks as they arrive (streaming). */
   onChunk?: (chunk: string) => void;
   /**
@@ -294,6 +299,12 @@ export class ClaudeClient {
       }
       if (opts.maxTurns) {
         args.push('--max-turns', String(opts.maxTurns));
+      }
+      if (opts.effort) {
+        args.push('--effort', opts.effort);
+      }
+      if (opts.allowedTools && opts.allowedTools.length > 0) {
+        args.push('--allowed-tools', ...opts.allowedTools);
       }
 
       // Pipe prompt via stdin instead of CLI args to avoid ARG_MAX limits

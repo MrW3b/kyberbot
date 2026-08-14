@@ -10,6 +10,7 @@ export interface AgentManifest {
   role: string;
   'allowed-tools'?: string[];
   model?: string;
+  effort?: string;
   'max-turns'?: number;
 }
 
@@ -19,6 +20,7 @@ export interface InstalledAgent {
   role: string;
   path: string;
   model: string;
+  effort?: string;
   maxTurns: number;
   allowedTools: string[];
   systemPromptBody: string; // Markdown below the frontmatter
