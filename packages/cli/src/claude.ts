@@ -287,7 +287,14 @@ export class ClaudeClient {
       // Use stream-json format when onChunk is provided for live output
       const useStreamJson = !!opts.onChunk;
       const args = ['--print', '-'];
-      args.push('--dangerously-skip-permissions'); // Always skip — subprocesses are headless, no human to prompt
+      // Headless — no human to answer prompts. With a tool allowlist, dontAsk
+      // keeps the permission layer active so Bash(pattern) rules are enforced
+      // (skip-permissions bypasses them) and off-list calls are auto-denied.
+      if (opts.allowedTools && opts.allowedTools.length > 0) {
+        args.push('--permission-mode', 'dontAsk', '--allowed-tools', ...opts.allowedTools);
+      } else {
+        args.push('--dangerously-skip-permissions');
+      }
       if (useStreamJson) {
         args.push('--output-format', 'stream-json', '--verbose');
       }
@@ -302,9 +309,6 @@ export class ClaudeClient {
       }
       if (opts.effort) {
         args.push('--effort', opts.effort);
-      }
-      if (opts.allowedTools && opts.allowedTools.length > 0) {
-        args.push('--allowed-tools', ...opts.allowedTools);
       }
 
       // Pipe prompt via stdin instead of CLI args to avoid ARG_MAX limits
