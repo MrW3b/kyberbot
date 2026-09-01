@@ -180,6 +180,20 @@ export function createHeartbeatCommand(): Command {
         console.log(`  ${chalk.white.bold(task.name)}`);
         console.log(chalk.dim(`    Cadence:  ${task.cadence || 'not set'}`));
         console.log(`    Last run: ${lastRunStr}`);
+
+        // Consecutive failures are shown loudly and never folded into
+        // "Last run" — a failing task must not read as healthy (SF-010).
+        const fail = state.failures?.[task.name];
+        if (fail?.count > 0) {
+          const failAgoMin = Math.round((Date.now() - new Date(fail.lastFailure).getTime()) / 60000);
+          const backoffMin = Math.min(30 * Math.pow(2, fail.count - 1), 360);
+          const remaining = Math.max(0, Math.round(backoffMin - failAgoMin));
+          console.log(
+            chalk.red(`    ⚠ FAILING: ${fail.count} consecutive failure(s), last ${failAgoMin}m ago`) +
+              chalk.dim(remaining > 0 ? ` — backing off ${remaining}m more` : ' — eligible again now'),
+          );
+          console.log(chalk.dim(`      ${fail.lastError}`));
+        }
         console.log('');
       }
     });

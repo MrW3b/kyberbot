@@ -283,11 +283,20 @@ function pickMostOverdueTask(
   lastChecks: Record<string, string | undefined>,
   now: Date,
   fallbackTz: string,
+  failures: Record<string, TaskFailure> = {},
 ): ParsedTask | null {
   let winner: ParsedTask | null = null;
   let winnerGap = -Infinity;
   for (const t of tasks) {
     if (!isTaskDue(t, lastChecks[t.name], now, fallbackTz)) continue;
+    // Skip a recently-failed task until its backoff window elapses, so one
+    // failing task cannot monopolise every tick. The task stays "due" and keeps
+    // its real (stale) lastChecks — it is deferred, not marked run.
+    const fail = failures[t.name];
+    if (fail && fail.count > 0) {
+      const since = now.getTime() - new Date(fail.lastFailure).getTime();
+      if (Number.isFinite(since) && since < failureBackoffMs(fail.count)) continue;
+    }
     const lastIso = lastChecks[t.name];
     const last = lastIso ? new Date(lastIso) : null;
     let gap: number;
@@ -307,18 +316,47 @@ function pickMostOverdueTask(
   return winner;
 }
 
+interface TaskFailure {
+  count: number;        // consecutive failures since last success
+  lastFailure: string;  // ISO timestamp of most recent failure
+  lastError: string;    // truncated error text, for `heartbeat status`
+}
+
 interface HeartbeatState {
   lastChecks: Record<string, string>;
+  /**
+   * Consecutive-failure record per task (added 2026-09-01).
+   *
+   * Deliberately SEPARATE from lastChecks: a failed task must never receive a
+   * success timestamp, or a permanently-broken task reads as "Last run: 5m ago"
+   * in `heartbeat status` while never once succeeding — the cosmetic-green
+   * failure mode (SF-010). Backoff keeps the queue moving; visibility keeps the
+   * failure loud.
+   */
+  failures?: Record<string, TaskFailure>;
+}
+
+/**
+ * How long a task stays skipped after N consecutive failures.
+ * 30m, 1h, 2h, 4h, then capped at 6h. Without this a task that fails fast
+ * (e.g. exhausting --max-turns) is re-selected as most-overdue on the very
+ * next tick forever, starving every other task behind it — the head-of-line
+ * blocking observed 2026-09-01.
+ */
+function failureBackoffMs(count: number): number {
+  const THIRTY_MIN = 30 * 60 * 1000;
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  return Math.min(THIRTY_MIN * Math.pow(2, Math.max(0, count - 1)), SIX_HOURS);
 }
 
 function readState(root: string): HeartbeatState {
   const stateFile = join(root, 'heartbeat-state.json');
-  if (!existsSync(stateFile)) return { lastChecks: {} };
+  if (!existsSync(stateFile)) return { lastChecks: {}, failures: {} };
   try {
     const parsed = JSON.parse(readFileSync(stateFile, 'utf-8'));
-    return { lastChecks: parsed.lastChecks ?? {} };
+    return { lastChecks: parsed.lastChecks ?? {}, failures: parsed.failures ?? {} };
   } catch {
-    return { lastChecks: {} };
+    return { lastChecks: {}, failures: {} };
   }
 }
 
@@ -442,7 +480,7 @@ async function tick(root: string): Promise<void> {
     getIdentityForRoot(root).timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const tasks = parseHeartbeatTasks(content);
   let state = readState(root);
-  const dispatched = pickMostOverdueTask(tasks, state.lastChecks, new Date(), fallbackTz);
+  const dispatched = pickMostOverdueTask(tasks, state.lastChecks, new Date(), fallbackTz, state.failures ?? {});
   if (!dispatched) {
     logger.debug(`Heartbeat skipped — no task due yet (${tasks.length} scheduled)`);
     return;
@@ -529,7 +567,7 @@ async function tick(root: string): Promise<void> {
 
     const client = getClaudeClient();
     const result = await client.complete(prompt, {
-      maxTurns: 15,
+      maxTurns: 40, // was 15 — too low for large sweeps (Brain Health Check diffs 1,093 files and exhausted it every tick, 2026-09-01)
       subprocess: true,
       cwd: root,
       model: getHeartbeatModelForRoot(root),
@@ -583,12 +621,35 @@ async function tick(root: string): Promise<void> {
     try {
       state = readState(root);
       state.lastChecks[dispatched.name] = new Date().toISOString();
+      if (state.failures?.[dispatched.name]) delete state.failures[dispatched.name];
       writeState(root, state);
     } catch (err) {
       logger.warn('Failed to record heartbeat run time', { task: dispatched.name, error: String(err) });
     }
   } catch (error) {
-    logger.error('Heartbeat tick failed', { task: dispatched.name, error: String(error) });
+    // Record the failure WITHOUT touching lastChecks. The task keeps its real
+    // staleness (so it is not silently "done"), but backs off so it cannot
+    // re-win every tick and starve the queue.
+    let count = 1;
+    try {
+      state = readState(root);
+      state.failures = state.failures ?? {};
+      count = (state.failures[dispatched.name]?.count ?? 0) + 1;
+      state.failures[dispatched.name] = {
+        count,
+        lastFailure: new Date().toISOString(),
+        lastError: String(error).slice(0, 300),
+      };
+      writeState(root, state);
+    } catch (err) {
+      logger.warn('Failed to record heartbeat failure', { task: dispatched.name, error: String(err) });
+    }
+    logger.error('Heartbeat tick failed', {
+      task: dispatched.name,
+      error: String(error),
+      consecutiveFailures: count,
+      backoffMinutes: Math.round(failureBackoffMs(count) / 60000),
+    });
   }
 }
 
