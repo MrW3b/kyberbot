@@ -237,6 +237,52 @@ describe('chunkText (via indexDocument)', () => {
     // The failure must never reach the caller as a silent success.
     expect(mockCollectionUpsert).not.toHaveBeenCalled();
   });
+
+  it('should process a very large document in multiple batches, not one oversized call (SF-030 follow-up)', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const { indexDocument, initializeEmbeddings } = await import('./embeddings.js');
+
+    mockHeartbeat.mockResolvedValue(true);
+    mockCollectionCount.mockResolvedValue(0);
+    mockCollectionUpsert.mockResolvedValue(undefined);
+    mockGetOrCreateCollection.mockResolvedValue({
+      count: mockCollectionCount,
+      upsert: mockCollectionUpsert,
+      query: mockCollectionQuery,
+    });
+
+    await initializeEmbeddings();
+
+    // ~330KB of real prose (short sentences) — enough to produce well over
+    // EMBED_BATCH_SIZE (100) chunks at CHUNK_SIZE=300, reproducing the
+    // "Payload too large" failure seen re-indexing a 330KB transcript in
+    // a single embeddings.create()/collection.upsert() call.
+    const sentences = Array.from({ length: 3000 }, (_, i) => `This is sentence number ${i} with enough words to matter.`);
+    const bigContent = sentences.join(' ');
+
+    mockCreate.mockImplementation(async (args: { input: string | string[] }) => {
+      const inputs = Array.isArray(args.input) ? args.input : [args.input];
+      return { data: inputs.map(() => ({ embedding: [0.1, 0.2] })) };
+    });
+
+    const count = await indexDocument('/tmp/test-root', 'doc-7', bigContent, {
+      type: 'transcript',
+      source_path: 'big-transcript.md',
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(count).toBeGreaterThan(100);
+    // Must have been split across multiple upsert calls, not one giant one.
+    expect(mockCollectionUpsert.mock.calls.length).toBeGreaterThan(1);
+    // Every individual upsert call must stay at or under the batch size.
+    for (const call of mockCollectionUpsert.mock.calls) {
+      expect(call[0].ids.length).toBeLessThanOrEqual(100);
+    }
+    // Total chunks actually upserted across all batches must equal the
+    // reported count — no chunks silently dropped between batches.
+    const totalUpserted = mockCollectionUpsert.mock.calls.reduce((sum: number, call: any) => sum + call[0].ids.length, 0);
+    expect(totalUpserted).toBe(count);
+  });
 });
 
 describe('initializeEmbeddings', () => {

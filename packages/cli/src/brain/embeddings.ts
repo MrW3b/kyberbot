@@ -80,6 +80,15 @@ const CONFIG = {
   CHUNK_OVERLAP: 75,
   MAX_RESULTS: 20,
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL || 'text-embedding-3-large',
+  // A large document can now legitimately produce 1000+ chunks since the
+  // SF-030 chunker fix bounds every individual chunk to CHUNK_SIZE — but
+  // sending all of them in one embeddings.create() + collection.upsert()
+  // call hits a request-payload-size ceiling somewhere in the OpenAI/Chroma
+  // chain ("Payload too large", a plain-text body the client fails to parse
+  // as JSON — surfaced 2026-07-31 re-indexing a 330KB/~1,470-chunk file).
+  // Batching sidesteps whichever layer enforces it without needing to know
+  // which one does.
+  EMBED_BATCH_SIZE: 100,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -347,49 +356,50 @@ export async function indexDocument(
   const chunks = chunkText(content);
   logger.info(`Indexing document: ${id} (${chunks.length} chunks)`);
 
+  const arpMeta: Record<string, string | number> = {};
+  if (metadata.project_id) arpMeta['project_id'] = metadata.project_id;
+  if (metadata.tags_csv) arpMeta['tags_csv'] = metadata.tags_csv;
+  if (metadata.classification) arpMeta['classification'] = metadata.classification;
+  if (metadata.connection_id) arpMeta['connection_id'] = metadata.connection_id;
+  if (metadata.source_did) arpMeta['source_did'] = metadata.source_did;
+
   try {
-    // Generate embeddings for all chunks
-    const embeddings = await generateEmbeddings(chunks.map((c) => c.text));
+    // Process in fixed-size batches — a single embeddings.create() /
+    // collection.upsert() call covering every chunk of a large document
+    // can exceed a request-payload-size limit even though no individual
+    // chunk does (see EMBED_BATCH_SIZE comment above).
+    for (let start = 0; start < chunks.length; start += CONFIG.EMBED_BATCH_SIZE) {
+      const batch = chunks.slice(start, start + CONFIG.EMBED_BATCH_SIZE);
+      const embeddings = await generateEmbeddings(batch.map((c) => c.text));
 
-    const ids: string[] = [];
-    const documents: string[] = [];
-    const metadatas: Record<string, string | number>[] = [];
+      const ids: string[] = [];
+      const documents: string[] = [];
+      const metadatas: Record<string, string | number>[] = [];
 
-    for (let i = 0; i < chunks.length; i++) {
-      ids.push(`${id}_chunk_${chunks[i].index}`);
-      documents.push(chunks[i].text);
-      // ── ARP unification (Phase A) — pass through agent-resource ──────
-      // metadata fields when the producer set them. Empty string is the
-      // ChromaDB-friendly null (avoids `undefined` filter issues) but
-      // typed handlers SHOULD use `where: {project_id: 'alpha'}` not
-      // `where: {project_id: ''}` for the unscoped lookup.
-      const arpMeta: Record<string, string | number> = {};
-      if (metadata.project_id) arpMeta['project_id'] = metadata.project_id;
-      if (metadata.tags_csv) arpMeta['tags_csv'] = metadata.tags_csv;
-      if (metadata.classification) arpMeta['classification'] = metadata.classification;
-      if (metadata.connection_id) arpMeta['connection_id'] = metadata.connection_id;
-      if (metadata.source_did) arpMeta['source_did'] = metadata.source_did;
+      for (const chunk of batch) {
+        ids.push(`${id}_chunk_${chunk.index}`);
+        documents.push(chunk.text);
+        // ── ARP unification (Phase A) — pass through agent-resource ────
+        // metadata fields when the producer set them. Empty string is the
+        // ChromaDB-friendly null (avoids `undefined` filter issues) but
+        // typed handlers SHOULD use `where: {project_id: 'alpha'}` not
+        // `where: {project_id: ''}` for the unscoped lookup.
+        metadatas.push({
+          type: metadata.type,
+          source_path: metadata.source_path,
+          title: metadata.title || '',
+          timestamp: metadata.timestamp,
+          chunk_index: chunk.index,
+          parent_id: id,
+          entities: metadata.entities?.join(',') || '',
+          topics: metadata.topics?.join(',') || '',
+          summary: metadata.summary || '',
+          ...arpMeta,
+        });
+      }
 
-      metadatas.push({
-        type: metadata.type,
-        source_path: metadata.source_path,
-        title: metadata.title || '',
-        timestamp: metadata.timestamp,
-        chunk_index: chunks[i].index,
-        parent_id: id,
-        entities: metadata.entities?.join(',') || '',
-        topics: metadata.topics?.join(',') || '',
-        summary: metadata.summary || '',
-        ...arpMeta,
-      });
+      await collection.upsert({ ids, documents, embeddings, metadatas });
     }
-
-    await collection.upsert({
-      ids,
-      documents,
-      embeddings,
-      metadatas,
-    });
 
     logger.info(`Indexed: ${id} (${chunks.length} chunks)`);
     return chunks.length;
