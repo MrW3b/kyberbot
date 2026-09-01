@@ -19,6 +19,7 @@ import { createLogger } from '../logger.js';
 import { semanticSearch, type SearchResult, isChromaAvailable, initializeEmbeddings } from '../brain/embeddings.js';
 import { hybridSearch, type HybridSearchResult } from '../brain/hybrid-search.js';
 import { getTimelineDb } from '../brain/timeline.js';
+import { getSuppressedSourcePaths } from '../brain/fact-store.js';
 import { parseNaturalDate } from '../utils/date-parser.js';
 import { getRoot } from '../config.js';
 
@@ -266,6 +267,16 @@ async function handleSearch(query: string, options: SearchOptions) {
       const type = options.type as 'conversation' | 'idea' | 'file' | 'transcript' | 'note' | undefined;
       let results = await semanticSearch(root, query, { limit: limit * 2, type });
 
+      // Drop retracted/superseded facts. This path reads ChromaDB directly, and
+      // Chroma carries no retraction metadata of its own.
+      const suppressedSemantic = await getSuppressedSourcePaths(
+        root,
+        results.map(r => r.metadata.source_path),
+      );
+      if (suppressedSemantic.size > 0) {
+        results = results.filter(r => !suppressedSemantic.has(r.metadata.source_path));
+      }
+
       if (options.entity) {
         results = filterByEntity(results, options.entity, options.entityMatch || 'all');
       }
@@ -316,7 +327,18 @@ async function handleSearch(query: string, options: SearchOptions) {
       rerank: true,
     });
 
-    if (hybridResults.length === 0) {
+    // Same suppression on the default path — hybridSearch draws its semantic
+    // half from ChromaDB, so a retracted fact reaches here the same way.
+    const suppressedHybrid = await getSuppressedSourcePaths(
+      root,
+      hybridResults.map(r => r.source_path),
+    );
+    const visibleResults =
+      suppressedHybrid.size > 0
+        ? hybridResults.filter(r => !suppressedHybrid.has(r.source_path))
+        : hybridResults;
+
+    if (visibleResults.length === 0) {
       console.log(chalk.yellow('No results found.'));
       if (options.entity || options.after || options.before || options.tier) {
         console.log(chalk.dim('Try removing filters for broader results.'));
@@ -325,13 +347,13 @@ async function handleSearch(query: string, options: SearchOptions) {
     }
 
     if (options.json) {
-      console.log(JSON.stringify(hybridResults, null, 2));
+      console.log(JSON.stringify(visibleResults, null, 2));
     } else {
-      console.log(chalk.cyan.bold(`Found ${hybridResults.length} results`));
+      console.log(chalk.cyan.bold(`Found ${visibleResults.length} results`));
       console.log(chalk.dim('-'.repeat(60)));
 
-      for (let i = 0; i < hybridResults.length; i++) {
-        const r = hybridResults[i];
+      for (let i = 0; i < visibleResults.length; i++) {
+        const r = visibleResults[i];
         const score = (r.hybridScore * 100).toFixed(1);
         const timestamp = new Date(r.timestamp).toLocaleDateString();
 
@@ -364,12 +386,12 @@ async function handleSearch(query: string, options: SearchOptions) {
 
       console.log('');
       console.log(chalk.dim('-'.repeat(60)));
-      console.log(chalk.dim(`${hybridResults.length} results shown`));
+      console.log(chalk.dim(`${visibleResults.length} results shown`));
       console.log('');
     }
 
     // Track access for returned results
-    await trackSearchAccess(root, hybridResults.map(r => r.source_path));
+    await trackSearchAccess(root, visibleResults.map(r => r.source_path));
   } catch (error) {
     logger.error('Search failed', { error: String(error) });
     console.error(chalk.red(`Error: ${error}`));

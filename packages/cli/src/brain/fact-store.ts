@@ -182,16 +182,55 @@ export async function ensureFactsTable(root: string): Promise<void> {
       END;
 
       CREATE TRIGGER IF NOT EXISTS facts_fts_ad AFTER DELETE ON facts BEGIN
-        INSERT INTO facts_fts(facts_fts, rowid, content, entities) VALUES ('delete', old.id, old.content, old.entities_json);
+        DELETE FROM facts_fts WHERE rowid = old.id;
       END;
 
       CREATE TRIGGER IF NOT EXISTS facts_fts_au AFTER UPDATE ON facts BEGIN
-        INSERT INTO facts_fts(facts_fts, rowid, content, entities) VALUES ('delete', old.id, old.content, old.entities_json);
+        DELETE FROM facts_fts WHERE rowid = old.id;
         INSERT INTO facts_fts(rowid, content, entities) VALUES (new.id, new.content, new.entities_json);
       END;
     `);
   } catch {
     // FTS table or triggers may already exist with different names
+  }
+
+  // Repair the delete/update triggers on databases created before 2026-09-01.
+  //
+  // facts_fts is a plain fts5 table (it owns its content), but these two
+  // triggers originally used the external-content delete idiom
+  // `INSERT INTO facts_fts(facts_fts, rowid, ...) VALUES ('delete', ...)`,
+  // which is only legal for a `content=`-backed table. On this one it raises
+  // "SQL logic error", so EVERY UPDATE and DELETE on facts failed — meaning
+  // retractFact() could not write is_retracted at all and no fact was ever
+  // removable. CREATE TRIGGER IF NOT EXISTS above cannot fix an existing
+  // database because the broken trigger already exists, so drop and recreate.
+  try {
+    const broken = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'trigger' AND name IN ('facts_fts_ad','facts_fts_au')
+           AND sql LIKE '%''delete''%'`
+      )
+      .all() as Array<{ name: string }>;
+
+    if (broken.length > 0) {
+      for (const t of broken) db.exec(`DROP TRIGGER IF EXISTS ${t.name}`);
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS facts_fts_ad AFTER DELETE ON facts BEGIN
+          DELETE FROM facts_fts WHERE rowid = old.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS facts_fts_au AFTER UPDATE ON facts BEGIN
+          DELETE FROM facts_fts WHERE rowid = old.id;
+          INSERT INTO facts_fts(rowid, content, entities) VALUES (new.id, new.content, new.entities_json);
+        END;
+      `);
+      logger.info('Repaired facts_fts triggers (UPDATE/DELETE on facts was failing)', {
+        repaired: broken.map(t => t.name),
+      });
+    }
+  } catch (err) {
+    logger.warn('Could not repair facts_fts triggers', { err: String(err) });
   }
 }
 
@@ -422,4 +461,52 @@ export async function markFactSuperseded(
   `).run(newFactId, oldFactId);
 
   logger.debug('Marked fact as superseded', { oldFactId, newFactId });
+}
+
+/**
+ * Given a set of source_paths, return the subset that belongs to a fact which
+ * is retracted or superseded and must not be shown.
+ *
+ * Read-time defence in depth. retractFact() deletes the embedding, so a fact
+ * retracted from now on leaves the vector store immediately — but that delete
+ * is best-effort (it no-ops when ChromaDB is down), it cannot reach facts
+ * retracted before that fix existed, and `is_latest = 0` marks superseded facts
+ * that were never retracted at all. Any of those still sit in Chroma, and the
+ * search path reads Chroma directly, so without this check a false claim keeps
+ * ranking after being retracted — exactly what happened on 2026-09-01.
+ *
+ * Non-fact documents (conversations, notes, files) have no row here and are
+ * never filtered. Fails open: if the lookup throws, callers show their results
+ * rather than silently returning nothing.
+ */
+export async function getSuppressedSourcePaths(
+  root: string,
+  sourcePaths: string[]
+): Promise<Set<string>> {
+  const suppressed = new Set<string>();
+  const unique = [...new Set(sourcePaths.filter(Boolean))];
+  if (unique.length === 0) return suppressed;
+
+  try {
+    const db = await getTimelineDb(root);
+    // Chunked to stay clear of SQLite's variable limit on large result sets.
+    const CHUNK = 400;
+    for (let i = 0; i < unique.length; i += CHUNK) {
+      const batch = unique.slice(i, i + CHUNK);
+      const rows = db
+        .prepare(
+          `SELECT DISTINCT source_path FROM facts
+           WHERE source_path IN (${batch.map(() => '?').join(',')})
+             AND (COALESCE(is_retracted, 0) = 1 OR COALESCE(is_latest, 1) = 0)`
+        )
+        .all(...batch) as { source_path: string }[];
+      for (const r of rows) suppressed.add(r.source_path);
+    }
+  } catch (err) {
+    logger.warn('Suppressed-fact lookup failed; showing unfiltered results', {
+      err: String(err),
+    });
+  }
+
+  return suppressed;
 }
