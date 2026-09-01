@@ -11,7 +11,7 @@
 import { getTimelineDb } from './timeline.js';
 import { createLogger } from '../logger.js';
 
-import { indexDocument, isChromaAvailable } from './embeddings.js';
+import { indexDocument, deleteDocument, isChromaAvailable } from './embeddings.js';
 
 const logger = createLogger('fact-store');
 
@@ -272,10 +272,32 @@ export async function retractFact(
   retractedBy: string = 'user-correction'
 ): Promise<void> {
   const db = await getTimelineDb(root);
+
+  // Read source_path BEFORE the update so the embedding can be addressed even
+  // if a future change to this function alters the row.
+  const row = db
+    .prepare('SELECT source_path FROM facts WHERE id = ?')
+    .get(factId) as { source_path?: string } | undefined;
+
   db.prepare(`
     UPDATE facts SET is_retracted = 1, retracted_by = ?, is_latest = 0, updated_at = datetime('now')
     WHERE id = ?
   `).run(retractedBy, factId);
+
+  // Drop the embedding too. Retraction is otherwise cosmetic at the search
+  // surface: `kyberbot search` queries ChromaDB directly and never consults
+  // is_retracted / is_latest, so a retracted fact keeps ranking — this is how a
+  // false claim about a real person survived retraction on 2026-09-01.
+  // Mirrors the id built in storeFact; best-effort, never fails the retraction.
+  if (row?.source_path && isChromaAvailable()) {
+    const chromaId = `fact_${row.source_path.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    try {
+      await deleteDocument(root, chromaId);
+    } catch {
+      // Embedding removal is best-effort; the SQLite retraction still stands.
+    }
+  }
+
   logger.debug('Retracted fact', { factId, retractedBy });
 }
 

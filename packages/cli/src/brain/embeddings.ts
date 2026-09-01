@@ -531,3 +531,41 @@ export async function getIndexStats(root?: string): Promise<{
   const count = await collection.count();
   return { totalChunks: count, available: true };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DELETION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Remove every chunk of a document from the vector store.
+ *
+ * ChromaDB carries no retraction metadata, and the search path queries it
+ * directly without consulting SQLite. A fact retracted in `facts` therefore
+ * keeps ranking in `kyberbot search` until its embedding is removed here.
+ * Chunks are addressed by `parent_id` (set by indexDocument) rather than by
+ * reconstructing `${id}_chunk_${n}`, so a document of any chunk count clears
+ * in one call.
+ *
+ * Best-effort by design: callers treat embedding state as a cache, and a
+ * ChromaDB outage must not fail the SQLite write that prompted the delete.
+ */
+export async function deleteDocument(root: string, id: string): Promise<boolean> {
+  if (!chromaInitialized) {
+    await initializeEmbeddings(root);
+  }
+
+  const collection = collections.get(root) || collections.get('__default__');
+  if (!chromaAvailable || !collection) {
+    logger.debug(`Skipping embedding delete (ChromaDB not available): ${id}`);
+    return false;
+  }
+
+  try {
+    await collection.delete({ where: { parent_id: id } });
+    logger.debug('Deleted document from vector store', { id });
+    return true;
+  } catch (err) {
+    logger.warn('Failed to delete document from vector store', { id, err: String(err) });
+    return false;
+  }
+}

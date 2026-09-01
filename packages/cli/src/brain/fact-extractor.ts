@@ -19,6 +19,17 @@ const logger = createLogger('fact-extractor');
 
 const REALTIME_FACT_PROMPT = `Extract 1-3 concrete facts about specific people, companies, or projects from this conversation. Only clear, verifiable facts — skip vague observations, greetings, and meta-commentary.
 
+CRITICAL — extract only what a speaker ASSERTS as true. A question is not a fact.
+Never convert any of these into a flat statement:
+- Questions, including ones carrying a guess: "do I have a nominee director?", "I believe X is my director, is that correct?" — the speaker is ASKING, not telling. Extract nothing.
+- Hedged or uncertain claims: "I think", "I believe", "probably", "might be", "I'm not sure but". Either keep the hedge inside the content, or skip it.
+- Possibilities, plans under consideration, and hypotheticals: "we might use X", "if we go with Y".
+- Anything the assistant proposed, inferred, or drafted that a human has not confirmed. Only the user's own assertions and externally sourced documents are facts.
+- A correction's OLD value. If someone says "it's not X, it's Y", the fact is Y.
+
+When in doubt, extract nothing. A missing fact costs a later question; a false fact
+gets retrieved as truth for months and is expensive to unwind across every store.
+
 Each fact object has:
 - "content": The fact statement (8-25 words, include names not pronouns)
 - "category": One of: biographical, preference, event, relationship, temporal, opinion, plan, general
