@@ -153,6 +153,14 @@ export function createAgentCommand(): Command {
         console.log(chalk.dim(`  Tools:      ${agent.allowedTools.join(', ')}`));
       }
 
+      if (agent.cwd) {
+        console.log(chalk.dim(`  Cwd:        ${agent.cwd}`));
+      }
+
+      if (agent.disallowedTools.length > 0) {
+        console.log(chalk.dim(`  Deny:       ${agent.disallowedTools.join(', ')}`));
+      }
+
       // Show first 10 lines of instructions
       if (agent.systemPromptBody) {
         const lines = agent.systemPromptBody.split('\n').slice(0, 10);
