@@ -35,6 +35,15 @@ export interface CompleteOptions {
   effort?: string;
   /** Tool allowlist passed to --allowed-tools (permission-rule syntax supported). */
   allowedTools?: string[];
+  /**
+   * Deny rules passed to --disallowed-tools (same permission-rule syntax).
+   * Layered on top of allowedTools/dontAsk as defense-in-depth — e.g. an
+   * explicit Edit(path/**) deny surviving even if allowedTools is later
+   * widened. Note: only Edit(path) is actually consulted for path-scoped
+   * file rules; Write(path)/NotebookEdit(path) are accepted but ignored
+   * by Claude Code.
+   */
+  disallowedTools?: string[];
   /** Callback for stdout chunks as they arrive (streaming). */
   onChunk?: (chunk: string) => void;
   /**
@@ -294,6 +303,9 @@ export class ClaudeClient {
         args.push('--permission-mode', 'dontAsk', '--allowed-tools', ...opts.allowedTools);
       } else {
         args.push('--dangerously-skip-permissions');
+      }
+      if (opts.disallowedTools && opts.disallowedTools.length > 0) {
+        args.push('--disallowed-tools', ...opts.disallowedTools);
       }
       if (useStreamJson) {
         args.push('--output-format', 'stream-json', '--verbose');

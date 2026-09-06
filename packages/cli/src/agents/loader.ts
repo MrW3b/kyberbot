@@ -56,6 +56,8 @@ export function loadInstalledAgents(root?: string): InstalledAgent[] {
         effort: manifest.effort,
         maxTurns: manifest['max-turns'] || 10,
         allowedTools: manifest['allowed-tools'] || [],
+        cwd: manifest.cwd,
+        disallowedTools: manifest.deny || [],
         systemPromptBody: body,
       });
     } catch (error) {

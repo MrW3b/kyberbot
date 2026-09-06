@@ -38,6 +38,12 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
     maxTurns: agent.maxTurns,
     effort: agent.effort,
     allowedTools: agent.allowedTools,
+    disallowedTools: agent.disallowedTools,
+    // GATE 3 (card 86d48zzhe): pin the spawned process's cwd when the
+    // agent's frontmatter declares one, so file tools without an explicit
+    // --add-dir cannot reach outside it. Falls back to the parent
+    // process's cwd (prior behavior) when unset.
+    cwd: agent.cwd,
     subprocess: true,
   };
 
@@ -46,6 +52,8 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
     maxTurns: agent.maxTurns,
     effort: agent.effort,
     allowedTools: agent.allowedTools.length,
+    disallowedTools: agent.disallowedTools.length,
+    cwd: agent.cwd,
   });
 
   // SF-013 mode (2) — bounded retry for early transient failures.
