@@ -17,7 +17,7 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import yaml from 'js-yaml';
 import { createLogger } from '../../logger.js';
-import { getClaudeClient, ImageInput } from '../../claude.js';
+import { getClaudeClient, ImageInput, AGENT_FACING_ALLOWED_TOOLS } from '../../claude.js';
 import { getAgentNameForRoot } from '../../config.js';
 import { Channel, ChannelMessage } from './types.js';
 import { storeConversation } from '../../brain/store-conversation.js';
@@ -142,7 +142,9 @@ export class TelegramChannel implements Channel {
           const client = getClaudeClient();
           const prompt = buildPromptWithHistory(convoId, text);
           const systemPrompt = await buildChannelSystemPrompt('telegram');
-          const reply = await client.complete(prompt, { system: systemPrompt, maxTurns: 30, subprocess: true, cwd: this.root });
+          // GATE 3 fix (Alfred, 9 Sep 2026): agent-facing reply — needs its normal
+          // capabilities, same allowlist chat-sse.ts's interactive session uses.
+          const reply = await client.complete(prompt, { system: systemPrompt, maxTurns: 30, subprocess: true, cwd: this.root, allowedTools: AGENT_FACING_ALLOWED_TOOLS });
 
           // Track both sides in history
           pushUserMessage(convoId, text);

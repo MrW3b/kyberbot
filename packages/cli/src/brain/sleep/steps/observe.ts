@@ -137,6 +137,8 @@ export async function runObserveStep(
             maxTurns: 1,
             subprocess: true,
             cwd: root,
+            // GATE 3 fix (Alfred, 9 Sep 2026): internal fact extraction, no tools needed.
+            allowedTools: [],
           }
         );
 

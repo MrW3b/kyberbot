@@ -20,7 +20,7 @@ import { createRun, completeRun, failRun, appendRunLog, countRecentFailures } fr
 import { transitionPhase, RunPhase } from './run-phases.js';
 import { canDispatch, type ConcurrencyConfig } from './reconcile.js';
 import { runConfiguredHook, type HooksConfig } from '../runtime/hooks.js';
-import { getClaudeClient } from '../claude.js';
+import { getClaudeClient, AGENT_FACING_ALLOWED_TOOLS } from '../claude.js';
 import { getIdentityForRoot } from '../config.js';
 import { setCurrentIssueId } from './tools.js';
 import type { Issue } from './types.js';
@@ -353,6 +353,11 @@ export async function runWorkerHeartbeat(
                 maxIdenticalToolCalls: loopDetection.maxIdenticalToolCalls,
                 maxConsecutiveToolErrors: loopDetection.maxConsecutiveToolErrors,
               },
+              // GATE 3 fix (Alfred, 9 Sep 2026): unlike the CEO, the worker
+              // actually does the task (creates deliverable files, per its own
+              // prompt above) — needs real tools, same allowlist chat-sse.ts's
+              // interactive session uses.
+              allowedTools: AGENT_FACING_ALLOWED_TOOLS,
             });
             break; // success
           } catch (err) {

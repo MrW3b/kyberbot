@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from '../../logger.js';
-import { getClaudeClient } from '../../claude.js';
+import { getClaudeClient, AGENT_FACING_ALLOWED_TOOLS } from '../../claude.js';
 import { Channel, ChannelMessage } from './types.js';
 import { join } from 'path';
 import { storeConversation } from '../../brain/store-conversation.js';
@@ -88,6 +88,10 @@ export class WhatsAppChannel implements Channel {
               maxTurns: 30,
               subprocess: true,
               cwd: this.root,
+              // GATE 3 fix (Alfred, 9 Sep 2026): agent-facing reply — needs its
+              // normal capabilities, same allowlist chat-sse.ts's interactive
+              // session uses.
+              allowedTools: AGENT_FACING_ALLOWED_TOOLS,
             });
 
             // Track both sides in history

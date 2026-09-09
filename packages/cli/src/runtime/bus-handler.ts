@@ -19,7 +19,7 @@ export async function handleIncomingBusMessage(
   agentName: string,
   msg: AgentMessage
 ): Promise<string> {
-  const { getClaudeClient } = await import('../claude.js');
+  const { getClaudeClient, AGENT_FACING_ALLOWED_TOOLS } = await import('../claude.js');
   const { hybridSearch } = await import('../brain/hybrid-search.js');
 
   // Retrieve relevant context from this agent's brain
@@ -62,6 +62,9 @@ export async function handleIncomingBusMessage(
       maxTokens: 1024,
       subprocess: true,
       cwd: root,
+      // GATE 3 fix (Alfred, 9 Sep 2026): inter-agent bus — a peer agent talking
+      // to this agent, same allowlist chat-sse.ts's interactive session uses.
+      allowedTools: AGENT_FACING_ALLOWED_TOOLS,
     });
     return response;
   } catch (error) {

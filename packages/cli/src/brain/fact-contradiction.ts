@@ -136,6 +136,8 @@ Only include facts with "updates" or "extends" relationship. Return [] if no rel
       maxTurns: 1,
       subprocess: true,
       cwd: root,
+      // GATE 3 fix (Alfred, 9 Sep 2026): internal comparison, no tools needed.
+      allowedTools: [],
     });
 
     // 5. Parse response

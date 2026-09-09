@@ -217,7 +217,7 @@ async function extractEntitiesAndRelationships(
     const truncated = text.length > 4000 ? text.slice(0, 4000) + '\n[truncated]' : text;
     const response = await client.complete(
       `Extract entities and relationships from this conversation:\n\n${truncated}`,
-      { model: 'haiku', system: ENTITY_EXTRACTION_PROMPT, maxTokens: 1024, maxTurns: 1 }
+      { model: 'haiku', system: ENTITY_EXTRACTION_PROMPT, maxTokens: 1024, maxTurns: 1, allowedTools: [] }
     );
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { entities: [], relationships: [] };
@@ -261,6 +261,7 @@ async function extractObservations(text: string): Promise<string[]> {
       model: 'haiku',
       maxTokens: 1024,
       maxTurns: 1,
+      allowedTools: [],
     });
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
@@ -1627,7 +1628,7 @@ Instructions:
 Think step by step about what information you have and what you still need.`;
 
     const reasoning = await client.complete(reasoningPrompt, {
-      model: 'haiku', maxTokens: 200, maxTurns: 1,
+      model: 'haiku', maxTokens: 200, maxTurns: 1, allowedTools: [],
     });
 
     if (reasoning.includes('ANSWER:')) {
@@ -1651,7 +1652,7 @@ Think step by step about what information you have and what you still need.`;
 
   const prompt = buildPrompt(qa, context, speakerA, speakerB);
   const answer = await client.complete(prompt, {
-    model: 'haiku', maxTokens: 100, maxTurns: 1,
+    model: 'haiku', maxTokens: 100, maxTurns: 1, allowedTools: [],
   });
   return cleanAnswer(answer);
 }
@@ -1699,6 +1700,7 @@ async function answerQuestion(
     model: 'haiku',
     maxTokens: 100,
     maxTurns: 1,
+    allowedTools: [],
   });
 
   return cleanAnswer(answer);

@@ -155,6 +155,8 @@ export async function runReasoningStep(
             maxTurns: 1,
             subprocess: true,
             cwd: root,
+            // GATE 3 fix (Alfred, 9 Sep 2026): internal reasoning, no tools needed.
+            allowedTools: [],
           });
 
           const deductions = parseInsights(deductionResponse);
@@ -207,6 +209,8 @@ export async function runReasoningStep(
             maxTurns: 1,
             subprocess: true,
             cwd: root,
+            // GATE 3 fix (Alfred, 9 Sep 2026): internal reasoning, no tools needed.
+            allowedTools: [],
           });
 
           const inductions = parseInsights(inductionResponse);

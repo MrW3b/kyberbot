@@ -89,6 +89,8 @@ export async function extractFactsRealtime(
         maxTurns: 1,
         subprocess: true,
         cwd: root,
+        // GATE 3 fix (Alfred, 9 Sep 2026): internal extraction, no tools needed.
+        allowedTools: [],
       }
     );
 

@@ -363,6 +363,11 @@ export async function runCeoHeartbeat(root: string, agentName: string): Promise<
       cwd: root,
       model: getHeartbeatModelForRoot(root),
       onChunk: (chunk) => appendRunLog(runId, chunk),
+      // GATE 3 fix (Alfred, 9 Sep 2026): the CEO's "orchestration tools" are a
+      // text-protocol (parseToolCalls/executeTool against the goals/issues DB
+      // in tools.ts), not real Claude Code tools — the model never touches
+      // Bash/Edit/etc directly. allowedTools: [] is the correct, tightest grant.
+      allowedTools: [],
       system: [
         `You are ${agentName}, the CEO orchestrator for this company.`,
         'You coordinate a team of AI agents to achieve company goals.',
