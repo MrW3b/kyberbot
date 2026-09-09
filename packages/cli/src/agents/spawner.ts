@@ -8,7 +8,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { getAgentName, getRoot } from '../config.js';
-import { getClaudeClient, CompleteOptions } from '../claude.js';
+import { getClaudeClient, CompleteOptions, resolveModelAlias } from '../claude.js';
 import { getAgent } from './loader.js';
 import { InstalledAgent, AgentSpawnResult } from './types.js';
 import { createLogger } from '../logger.js';
@@ -16,24 +16,27 @@ import { createLogger } from '../logger.js';
 const logger = createLogger('agent-spawner');
 
 /**
- * card 86d4aavjr (Chris's ruling, 9 Sep 2026): a charter model's usage quota
- * can run out mid-session (observed so far on Fable — see
+ * card 86d4aavjr (Chris's ruling, 9 Sep 2026), tightened card 86d4adqh7
+ * (Hinata B-R1, 9 Sep 2026): a charter model's usage quota can run out
+ * mid-session (observed so far on Fable — see
  * incident_fable_quota_exhausted_blocks_headless_spawns_sep9.md). That exit
  * looks identical to a broken agent from the caller's side: exit 1, EMPTY
- * stderr. The one signal that actually distinguishes it is the CLI's own
- * refusal text on stdout ("You've reached your Fable limit...") — plus, per
- * Hinata, an explicit HTTP 429 on at least one path. Both are narrow,
- * intentionally: this must not swallow genuine tool/permission/crash
- * failures, which would hide real breakage behind a silent model swap.
- * If a future exhaustion surfaces different wording, widen this pattern
- * deliberately and say so in the commit — do not loosen it to a generic
- * catch-all.
+ * stderr.
+ *
+ * The original version of this function pattern-matched against 500 chars
+ * of the AGENT's own stdout, including /\b429\b|rate.?limit(ed)?\b/i —
+ * Hinata showed 5 of 8 realistic non-quota failures fire that (a quoted
+ * upstream 429, a bare line number, a row count an agent happened to
+ * print). Detection has moved into claude.ts's completeSubprocess, which
+ * has the actual raw stdout/stderr and computes `quotaExhausted` against
+ * the CLI's OWN anchored refusal wording only (stderr empty, stdout short,
+ * matches from the start) — never against arbitrary agent-generated text.
+ * This function now trusts only that structured flag. If it isn't set,
+ * this is NOT treated as a quota wall and the caller sees the real error —
+ * a loud failure beats a silent misclassified retry.
  */
-const QUOTA_EXHAUSTED_PATTERN = /reached your .*?\blimit\b/i;
-const RATE_LIMITED_PATTERN = /\b429\b|rate.?limit(ed)?\b/i;
-
-function isModelQuotaExhausted(message: string): boolean {
-  return QUOTA_EXHAUSTED_PATTERN.test(message) || RATE_LIMITED_PATTERN.test(message);
+function isModelQuotaExhausted(err: Error): boolean {
+  return (err as { quotaExhausted?: boolean }).quotaExhausted === true;
 }
 
 /**
@@ -117,32 +120,48 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
       // the quality of the work and whoever reads the output (Chris, a
       // heartbeat log, `kyberbot agent spawn`'s own stdout) must be told
       // which model actually produced it.
-      if (agent.model !== 'opus' && isModelQuotaExhausted(lastError.message)) {
+      // card 86d4adqh7 (Hinata B-R3): compare RESOLVED model ids, not raw
+      // literals. An agent chartered directly on 'claude-opus-5' (neo,
+      // pepper, sherlock) is not the string 'opus', so the old check would
+      // "fall back" onto the exact same exhausted model and guarantee a
+      // second failure. Resolving both sides through the same alias map
+      // catches that regardless of which form the charter uses.
+      const resolvedCharterModel = resolveModelAlias(agent.model);
+      const resolvedFallbackModel = resolveModelAlias('opus');
+      if (resolvedCharterModel !== resolvedFallbackModel && isModelQuotaExhausted(lastError)) {
         logger.error(
           `Agent ${name}: charter model '${agent.model}' quota exhausted — falling back to Opus ONCE (runtime-only, charter unchanged)`,
           { detectedFrom: lastError.message.slice(0, 300) }
         );
         try {
-          const fallbackOpts: CompleteOptions = { ...opts, model: 'opus' };
+          // card 86d4adqh7 (Hinata B-R2): read the model that actually
+          // answered back from the run instead of hard-coding it, so the
+          // banner can't go stale the next time an alias is repointed.
+          let actualModelId = resolvedFallbackModel;
+          const fallbackOpts: CompleteOptions = {
+            ...opts,
+            model: 'opus',
+            onModelResolved: (m) => { actualModelId = m; },
+          };
           const response = await client.complete(prompt, fallbackOpts);
           const durationMs = Date.now() - start;
           const banner =
             `[ALFRED RUNTIME FALLBACK — card 86d4aavjr] ${name}'s charter model ` +
             `(${agent.model}) had exhausted its quota. This response was produced by ` +
-            `claude-opus-4-8 instead — NOT ${agent.model}. The charter is unchanged; ` +
+            `${actualModelId} instead — NOT ${agent.model}. The charter is unchanged; ` +
             `this is a one-time runtime substitution for this call only.\n\n`;
-          logger.warn(`Agent ${name} completed on FALLBACK model opus after ${agent.model} quota exhaustion`, {
+          logger.warn(`Agent ${name} completed on FALLBACK model ${actualModelId} after ${agent.model} quota exhaustion`, {
             durationMs,
           });
           return {
             agent: name,
             prompt,
             response: banner + response,
-            model: 'opus',
+            model: actualModelId,
             durationMs,
             modelFallback: {
               from: agent.model,
-              to: 'opus',
+              to: actualModelId,
               reason: lastError.message.slice(0, 300),
             },
           };

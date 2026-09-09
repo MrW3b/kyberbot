@@ -570,6 +570,21 @@ async function tick(root: string): Promise<void> {
       maxTurns: 40, // was 15 — too low for large sweeps (Brain Health Check diffs 1,093 files and exhausted it every tick, 2026-09-01)
       subprocess: true,
       cwd: root,
+      // card 86d4adqh7 (Alfred, 9 Sep 2026): GATE 3 (commit 3d3eb8f, same
+      // day) removed completeSubprocess's silent --dangerously-skip-permissions
+      // fallback for any call with no allowedTools and no sandboxed cwd.
+      // This heartbeat tick is exactly that shape — the top-level scheduled
+      // loop, no allowlist, cwd = the agent's own root which has no
+      // sandbox.enabled — so every tick since 19:39 SGT threw instead of
+      // running (caught here by required `kyberbot heartbeat run`
+      // verification, not by anything upstream). Restoring it with an
+      // explicit allowlist rather than reverting GATE 3: reuse the exact
+      // ceiling chat-sse.ts already runs headless full-tool sessions under
+      // (server/chat-sse.ts chatViaSubprocess) — strictly narrower than the
+      // skip-permissions this replaces, since --permission-mode dontAsk
+      // still enforces any Bash(pattern)/path deny rules in the root's
+      // settings, which skip-permissions bypassed entirely.
+      allowedTools: ['Bash', 'WebFetch', 'WebSearch', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Agent', 'Skill'],
       model: getHeartbeatModelForRoot(root),
       system: [
         'You are a heartbeat task executor for a KyberBot agent.',

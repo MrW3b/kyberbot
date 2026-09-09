@@ -206,7 +206,11 @@ export class TelegramChannel implements Channel {
         const client = getClaudeClient();
         const systemPrompt = await buildChannelSystemPrompt('telegram');
         const images: ImageInput[] = [{ data: base64, mediaType: 'image/jpeg' }];
-        const reply = await client.completeWithImages(prompt, images, { system: systemPrompt, cwd: this.root });
+        // card 86d4adqh7: completeWithImages no longer defaults to
+        // --dangerously-skip-permissions. Captioning an image needs no
+        // tool use at all, so opt in explicitly with an empty allowlist
+        // rather than relying on jarvis root having a sandbox (it doesn't).
+        const reply = await client.completeWithImages(prompt, images, { system: systemPrompt, cwd: this.root, allowedTools: [] });
 
         if (!reply || reply.trim().length === 0) {
           logger.warn('Claude returned empty response for photo');

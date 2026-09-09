@@ -13,7 +13,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { getHeartbeatInterval, getIdentity, getTimezone, paths } from '../config.js';
+import { getHeartbeatInterval, getIdentity, getTimezone, getRoot, paths } from '../config.js';
 import { getClaudeClient } from '../claude.js';
 
 interface ParsedTask {
@@ -246,6 +246,16 @@ export function createHeartbeatCommand(): Command {
       try {
         const client = getClaudeClient();
         const result = await client.complete(prompt, {
+          // card 86d4adqh7 (Alfred, 9 Sep 2026): this manual `kyberbot
+          // heartbeat run` entry point had no cwd/allowedTools, so GATE 3's
+          // same-day removal of the silent skip-permissions fallback
+          // (commit 3d3eb8f) broke it outright — found by the verification
+          // this fix pass required. Same ceiling as the scheduled tick in
+          // services/heartbeat.ts and chat-sse.ts's headless full-tool
+          // sessions, not a new trust grant.
+          subprocess: true,
+          cwd: getRoot(),
+          allowedTools: ['Bash', 'WebFetch', 'WebSearch', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Agent', 'Skill'],
           system: 'You are a heartbeat scheduler. Execute the most overdue task from HEARTBEAT.md. Return HEARTBEAT_OK if nothing needs attention.',
         });
 

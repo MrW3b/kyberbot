@@ -98,6 +98,15 @@ export interface CompleteOptions {
     maxIdenticalToolCalls: number;
     maxConsecutiveToolErrors: number;
   };
+  /**
+   * card 86d4adqh7 (Alfred, 9 Sep 2026): when set, completeSubprocess adds
+   * --output-format json (non-streaming calls only) and, on success, calls
+   * this with the model id read from the CLI's own JSON `modelUsage` field
+   * — the model that actually answered, not the alias requested. Used by
+   * the quota-exhaustion fallback in spawner.ts so its banner cannot go
+   * stale the next time an alias is repointed (Hinata's B-R2).
+   */
+  onModelResolved?: (modelId: string) => void;
 }
 
 // Model ID mapping. Update when Anthropic publishes new minor versions —
@@ -107,9 +116,27 @@ export interface CompleteOptions {
 const MODEL_IDS: Record<string, string> = {
   haiku: 'claude-haiku-4-5',
   sonnet: 'claude-sonnet-5',
-  opus: 'claude-opus-4-8',
+  // card 86d4adqh7 (Hinata B-R2, 9 Sep 2026): measured live on this host —
+  // `claude -p ... --model opus --output-format json` resolves to
+  // claude-opus-5, not claude-opus-4-8. The alias moved and this map had
+  // not been updated; the fallback banner and completeSDK/chatSDK were
+  // both quoting the stale id. Do not hand-edit this again from memory —
+  // the runtime fallback in spawner.ts now reads the ACTUAL resolved id
+  // back from the CLI's own JSON output for the banner, so it can no
+  // longer drift this way; this literal is a fallback default only, for
+  // SDK-mode direct API calls where no live probe is available.
+  opus: 'claude-opus-5',
   fable: 'claude-fable-5',
 };
+
+/** Resolve an alias ('opus', 'sonnet', ...) to its current model id, or
+ * pass through a value that is already a full model id (e.g. an agent
+ * chartered directly on 'claude-opus-5'). Exported so callers comparing
+ * two model references (spawner.ts's quota-fallback guard) compare
+ * resolved ids rather than raw literals that may or may not be aliases. */
+export function resolveModelAlias(model: string): string {
+  return MODEL_IDS[model] || model;
+}
 
 /**
  * Order-stable JSON stringify so `{a:1,b:2}` and `{b:2,a:1}` produce the
@@ -213,7 +240,31 @@ export class ClaudeClient {
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const args = ['--print', '-', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
-      args.push('--dangerously-skip-permissions');
+      // card 86d4adqh7 (Hinata A-R4, 9 Sep 2026): this used to push
+      // --dangerously-skip-permissions unconditionally — the same shape
+      // GATE 3 removed from completeSubprocess, just not removed here too.
+      // Same rule now: an explicit allowedTools list (even an empty one,
+      // meaning "no tools needed") runs dontAsk; anything that never
+      // opted in and has no sandboxed cwd fails loudly instead of running
+      // open. The only live caller (telegram.ts photo replies) now passes
+      // allowedTools: [] explicitly, since captioning an image needs no
+      // tool at all.
+      if (opts.allowedTools !== undefined) {
+        if (opts.allowedTools.length > 0) {
+          args.push('--permission-mode', 'dontAsk', '--allowed-tools', ...opts.allowedTools);
+        } else {
+          args.push('--permission-mode', 'dontAsk');
+        }
+      } else if (cwdHasSandboxEnabled(opts.cwd)) {
+        args.push('--permission-mode', 'dontAsk');
+      } else {
+        throw new Error(
+          `Refusing to run a vision completion with --dangerously-skip-permissions removed ` +
+          `and no allowedTools/sandboxed cwd given (card 86d4adqh7). Pass an explicit ` +
+          `allowedTools list (use [] if the call needs no tools) or run it against a cwd ` +
+          `whose .claude/settings.json declares sandbox.enabled:true.`
+        );
+      }
       if (opts.system) args.push('--system-prompt', opts.system);
       if (opts.model) args.push('--model', opts.model);
       if (opts.maxTurns) args.push('--max-turns', String(opts.maxTurns));
@@ -317,6 +368,11 @@ export class ClaudeClient {
     return new Promise((resolve, reject) => {
       // Use stream-json format when onChunk is provided for live output
       const useStreamJson = !!opts.onChunk;
+      // card 86d4adqh7: capture the actually-resolved model id for the
+      // caller (spawner.ts's fallback banner). Only when explicitly
+      // requested and not already streaming, so no existing caller's
+      // output shape changes.
+      const wantsModelCapture = !!opts.onModelResolved && !useStreamJson;
       const args = ['--print', '-'];
       // Headless — no human to answer prompts. With a tool allowlist, dontAsk
       // keeps the permission layer active so Bash(pattern) rules are enforced
@@ -350,6 +406,8 @@ export class ClaudeClient {
       }
       if (useStreamJson) {
         args.push('--output-format', 'stream-json', '--verbose');
+      } else if (wantsModelCapture) {
+        args.push('--output-format', 'json');
       }
       if (opts.system) {
         args.push('--system-prompt', opts.system);
@@ -504,6 +562,24 @@ export class ClaudeClient {
         let resultText = '';
         let resultSubtype: string | null = null;
         let isError = false;
+        if (wantsModelCapture) {
+          // Single JSON object, not stream-json lines.
+          try {
+            const parsed = JSON.parse(stdout);
+            if (parsed.result) resultText = parsed.result;
+            if (parsed.subtype) resultSubtype = parsed.subtype;
+            if (parsed.is_error) isError = true;
+            const modelUsage = parsed.modelUsage;
+            if (modelUsage && typeof modelUsage === 'object') {
+              const resolvedId = Object.keys(modelUsage)[0];
+              if (resolvedId) opts.onModelResolved!(resolvedId);
+            }
+          } catch {
+            // Not parseable JSON (e.g. the process failed before printing
+            // any) — leave resultText empty, the existing exit-code
+            // handling below falls back to raw stdout/stderr as usual.
+          }
+        }
         if (useStreamJson) {
           for (const line of stdout.split('\n')) {
             const trimmed = line.trim();
@@ -552,7 +628,7 @@ export class ClaudeClient {
         }
 
         if (code === 0) {
-          if (useStreamJson) {
+          if (useStreamJson || wantsModelCapture) {
             resolve(resultText || stdout);
           } else {
             resolve(stdout);
@@ -585,7 +661,29 @@ export class ClaudeClient {
           // signal survives into the rejected Error's message.
           const stdoutPreview = stdout.slice(0, 500);
           logger.error(`claude subprocess exited with code ${code}`, { stderr: stderr.slice(0, 500), stdoutPreview, subtype: resultSubtype });
-          reject(new Error(`claude subprocess failed: ${stderr.slice(0, 500) || stdoutPreview || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`));
+          const err = new Error(`claude subprocess failed: ${stderr.slice(0, 500) || stdoutPreview || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`);
+          // card 86d4adqh7 (Hinata B-R1, 9 Sep 2026): the prior pattern
+          // matched /\b429\b|rate.?limit(ed)?\b/i against this same
+          // 500-char stdout preview, which is arbitrary agent-generated
+          // text — 5 of 8 realistic non-quota failures (a quoted upstream
+          // 429, a line number, a row count) fired it. Constrain what
+          // "quota exhausted" means to the CLI's OWN refusal shape,
+          // measured directly (Hinata: exit 1, empty stderr, ~149-byte
+          // stdout that IS the refusal, nothing else): stderr must be
+          // empty, stdout must be short (real work never fits under this),
+          // and the whole trimmed stdout — not a substring anywhere in
+          // it — must start with the CLI's exact wording. Anything that
+          // doesn't cleanly match this shape is NOT flagged as quota —
+          // spawner.ts fails loudly on it instead of silently retrying,
+          // per Chris's 9 Sep ruling to prefer a loud failure over a
+          // misclassified retry when the two can't be told apart.
+          const QUOTA_REFUSAL_PATTERN = /^You(?:'|’)ve reached your [^.\n]{0,60}?\blimit\b/i;
+          (err as { quotaExhausted?: boolean }).quotaExhausted =
+            stderr.trim() === '' &&
+            stdout.length > 0 &&
+            stdout.length <= 400 &&
+            QUOTA_REFUSAL_PATTERN.test(stdout);
+          reject(err);
         }
       });
 

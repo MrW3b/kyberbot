@@ -35,6 +35,23 @@ export async function startServer(options: {
 
   app.use(express.json());
 
+  // card 86d4adqh7 (Alfred, 9 Sep 2026, per Hinata's endpoint inventory):
+  // authMiddleware silently no-ops every request when KYBERBOT_API_TOKEN
+  // is unset — a correct default for a brand-new install with no tunnel,
+  // but silent if it goes missing on an install that already has one up.
+  // The three agent-spawn/execute endpoints behind the ngrok tunnel would
+  // then accept any request with no signal anywhere that they had. This
+  // does not change gating (the token still works exactly as before when
+  // set) — it just stops that specific failure from being silent.
+  if (!process.env.KYBERBOT_API_TOKEN) {
+    logger.warn(
+      'KYBERBOT_API_TOKEN is not set — the agent/execute/management API endpoints ' +
+      'are running with NO authentication. If a tunnel (ngrok) is active, anyone who ' +
+      'reaches it can spawn agents and run commands as this user. Set ' +
+      'KYBERBOT_API_TOKEN in .env to close this.'
+    );
+  }
+
   // Public health endpoint — comprehensive system status
   app.get('/health', (_req, res) => {
     const metrics = getMetrics();
