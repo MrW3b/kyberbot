@@ -10,10 +10,32 @@
  */
 
 import { spawn } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { getClaudeMode, getClaudeModel, getRoot } from './config.js';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('claude');
+
+/**
+ * GATE 3 (card 86d48zzhe, Alfred, 9 Sep 2026): does this cwd's own
+ * .claude/settings.json declare sandbox.enabled:true?
+ * Used only to decide whether a no-allowlist spawn is allowed to proceed
+ * under --permission-mode dontAsk. Never widens or narrows the sandbox
+ * itself — it just refuses to spawn open when there is no sandbox to fall
+ * back on. Fails closed (false) on any read/parse error.
+ */
+function cwdHasSandboxEnabled(cwd?: string): boolean {
+  if (!cwd) return false;
+  try {
+    const settingsPath = join(cwd, '.claude', 'settings.json');
+    if (!existsSync(settingsPath)) return false;
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    return settings?.sandbox?.enabled === true;
+  } catch {
+    return false;
+  }
+}
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -302,7 +324,26 @@ export class ClaudeClient {
       if (opts.allowedTools && opts.allowedTools.length > 0) {
         args.push('--permission-mode', 'dontAsk', '--allowed-tools', ...opts.allowedTools);
       } else {
-        args.push('--dangerously-skip-permissions');
+        // GATE 3 (card 86d48zzhe): an empty/mis-parsed allowedTools list used to
+        // fall back to --dangerously-skip-permissions, which silently converts a
+        // sandboxed spawn into an unsandboxed one — Hinata's U1 finding
+        // (brain/chris-os/agents/hinata/findings/2026-09-09-verify-neo-sandbox.md):
+        // two spawns volunteered exactly that retry unprompted, stopped only by
+        // this function's own permission mode, not by config. That fallback is
+        // removed. No allowlist now means dontAsk with no tool flags (nothing is
+        // implicitly allowed), and a cwd without sandbox.enabled:true in its own
+        // .claude/settings.json fails loudly instead of running open.
+        if (!cwdHasSandboxEnabled(opts.cwd)) {
+          throw new Error(
+            `Refusing to spawn without an allowedTools list and without a sandboxed cwd. ` +
+            `cwd=${opts.cwd ?? '(unset, parent cwd)'} has no sandbox.enabled:true in ` +
+            `.claude/settings.json. The old behavior silently fell back to ` +
+            `--dangerously-skip-permissions; that fallback has been removed (GATE 3, ` +
+            `card 86d48zzhe). Give this agent an allowedTools list, or enable the ` +
+            `sandbox in its cwd's .claude/settings.json.`
+          );
+        }
+        args.push('--permission-mode', 'dontAsk');
       }
       if (opts.disallowedTools && opts.disallowedTools.length > 0) {
         args.push('--disallowed-tools', ...opts.disallowedTools);
