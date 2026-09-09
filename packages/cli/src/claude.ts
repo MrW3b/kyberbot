@@ -576,8 +576,16 @@ export class ClaudeClient {
           });
           resolve(stdout);
         } else {
-          logger.error(`claude subprocess exited with code ${code}`, { stderr: stderr.slice(0, 500), subtype: resultSubtype });
-          reject(new Error(`claude subprocess failed: ${stderr.slice(0, 500) || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`));
+          // card 86d4aavjr: stderr is frequently empty on a quota-exhausted
+          // exit (e.g. the Fable-limit message) — the CLI prints its refusal
+          // to stdout, not stderr. Previously that text was dropped here
+          // (only `exit code N` reached the caller), so the spawner had
+          // nothing to pattern-match to tell "quota wall" apart from any
+          // other exit-1 failure. Fall back to a stdout preview so that
+          // signal survives into the rejected Error's message.
+          const stdoutPreview = stdout.slice(0, 500);
+          logger.error(`claude subprocess exited with code ${code}`, { stderr: stderr.slice(0, 500), stdoutPreview, subtype: resultSubtype });
+          reject(new Error(`claude subprocess failed: ${stderr.slice(0, 500) || stdoutPreview || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`));
         }
       });
 

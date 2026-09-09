@@ -16,6 +16,27 @@ import { createLogger } from '../logger.js';
 const logger = createLogger('agent-spawner');
 
 /**
+ * card 86d4aavjr (Chris's ruling, 9 Sep 2026): a charter model's usage quota
+ * can run out mid-session (observed so far on Fable — see
+ * incident_fable_quota_exhausted_blocks_headless_spawns_sep9.md). That exit
+ * looks identical to a broken agent from the caller's side: exit 1, EMPTY
+ * stderr. The one signal that actually distinguishes it is the CLI's own
+ * refusal text on stdout ("You've reached your Fable limit...") — plus, per
+ * Hinata, an explicit HTTP 429 on at least one path. Both are narrow,
+ * intentionally: this must not swallow genuine tool/permission/crash
+ * failures, which would hide real breakage behind a silent model swap.
+ * If a future exhaustion surfaces different wording, widen this pattern
+ * deliberately and say so in the commit — do not loosen it to a generic
+ * catch-all.
+ */
+const QUOTA_EXHAUSTED_PATTERN = /reached your .*?\blimit\b/i;
+const RATE_LIMITED_PATTERN = /\b429\b|rate.?limit(ed)?\b/i;
+
+function isModelQuotaExhausted(message: string): boolean {
+  return QUOTA_EXHAUSTED_PATTERN.test(message) || RATE_LIMITED_PATTERN.test(message);
+}
+
+/**
  * Spawn a sub-agent by name with a user prompt.
  * Builds the system prompt from the agent definition + identity context,
  * then executes via ClaudeClient.
@@ -85,6 +106,59 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
       };
     } catch (e) {
       lastError = e as Error;
+
+      // card 86d4aavjr: the charter model's quota is exhausted. This is not
+      // transient (SF-013's retry-with-delay above is for startup races and
+      // rate blips on the SAME model) — retrying claude-fable-5-1 again will
+      // fail identically every time until the quota resets. Runtime fallback:
+      // retry ONCE on Opus, never touching the charter file, and make the
+      // downgrade impossible to miss — logged here at error level, AND
+      // prefixed into the response text itself, because a model swap changes
+      // the quality of the work and whoever reads the output (Chris, a
+      // heartbeat log, `kyberbot agent spawn`'s own stdout) must be told
+      // which model actually produced it.
+      if (agent.model !== 'opus' && isModelQuotaExhausted(lastError.message)) {
+        logger.error(
+          `Agent ${name}: charter model '${agent.model}' quota exhausted — falling back to Opus ONCE (runtime-only, charter unchanged)`,
+          { detectedFrom: lastError.message.slice(0, 300) }
+        );
+        try {
+          const fallbackOpts: CompleteOptions = { ...opts, model: 'opus' };
+          const response = await client.complete(prompt, fallbackOpts);
+          const durationMs = Date.now() - start;
+          const banner =
+            `[ALFRED RUNTIME FALLBACK — card 86d4aavjr] ${name}'s charter model ` +
+            `(${agent.model}) had exhausted its quota. This response was produced by ` +
+            `claude-opus-4-8 instead — NOT ${agent.model}. The charter is unchanged; ` +
+            `this is a one-time runtime substitution for this call only.\n\n`;
+          logger.warn(`Agent ${name} completed on FALLBACK model opus after ${agent.model} quota exhaustion`, {
+            durationMs,
+          });
+          return {
+            agent: name,
+            prompt,
+            response: banner + response,
+            model: 'opus',
+            durationMs,
+            modelFallback: {
+              from: agent.model,
+              to: 'opus',
+              reason: lastError.message.slice(0, 300),
+            },
+          };
+        } catch (fallbackError) {
+          const fe = fallbackError as Error;
+          logger.error(
+            `Agent ${name}: Opus fallback ALSO failed after ${agent.model} quota exhaustion — giving up (one retry only)`,
+            { error: fe.message.slice(0, 300) }
+          );
+          throw new Error(
+            `Agent ${name} failed: charter model '${agent.model}' quota exhausted ` +
+            `(${lastError.message.slice(0, 200)}), and the one-shot Opus fallback also ` +
+            `failed: ${fe.message.slice(0, 200)}`
+          );
+        }
+      }
     }
   }
 

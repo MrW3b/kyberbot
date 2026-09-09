@@ -45,6 +45,18 @@ export interface AgentSpawnResult {
   agent: string;
   prompt: string;
   response: string;
+  /** Model that actually produced `response` — may differ from the charter's model, see modelFallback. */
   model: string;
   durationMs: number;
+  /**
+   * Set only when a runtime quota fallback fired (card 86d4aavjr, Chris's
+   * ruling 9 Sep 2026): the charter's own model ran out of quota mid-spawn,
+   * so this ONE call was retried on Opus instead of dying. The charter file
+   * itself is never edited — this is visible, logged, one-shot, per-call.
+   */
+  modelFallback?: {
+    from: string;
+    to: string;
+    reason: string;
+  };
 }
