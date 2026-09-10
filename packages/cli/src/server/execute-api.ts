@@ -19,7 +19,7 @@ function sendLine(res: Response, obj: Record<string, unknown>) {
 }
 
 export async function executeHandler(req: Request, res: Response) {
-  const { prompt, config, env: reqEnv } = req.body ?? {};
+  const { prompt, config } = req.body ?? {};
 
   // Validate
   if (!prompt || typeof prompt !== 'string') {
@@ -46,15 +46,14 @@ export async function executeHandler(req: Request, res: Response) {
   if (cfg.sessionId) args.push('--resume', String(cfg.sessionId));
   args.push('--dangerously-skip-permissions'); // Always skip — subprocesses are headless
 
-  // Build environment - merge request env vars
-  const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-  if (reqEnv && typeof reqEnv === 'object') {
-    for (const [key, value] of Object.entries(reqEnv)) {
-      if (typeof value === 'string') {
-        childEnv[key] = value;
-      }
-    }
-  }
+  // Environment is the server's own process env, verbatim. No caller-supplied
+  // override, allowlisted or otherwise — a prior version let any request body
+  // set arbitrary env vars in the spawned process (PATH to choose the binary,
+  // ANTHROPIC_BASE_URL to redirect model calls to a caller-controlled server).
+  // Grepping every caller in this repo found none that ever sent one, and the
+  // endpoint has no genuine need for one, so the parameter is removed rather
+  // than allowlisted (Hinata's /api/execute finding, 10 Sep 2026).
+  const childEnv = process.env as Record<string, string>;
 
   logger.info(`Executing claude in ${cwd} with ${args.length} args`);
 

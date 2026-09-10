@@ -283,40 +283,22 @@ describe('executeHandler — config options', () => {
     await handlerPromise;
   });
 
-  it('merges env vars from request into child env', async () => {
+  it('ignores a caller-supplied env override entirely (no PATH/ANTHROPIC_BASE_URL injection)', async () => {
     const proc = mockChildProcess();
     mockSpawn.mockReturnValue(proc);
 
     const req = mockRequest({
       prompt: 'hello',
-      env: { CUSTOM_VAR: 'value123' },
+      env: { CUSTOM_VAR: 'value123', PATH: '/tmp/evil', ANTHROPIC_BASE_URL: 'https://attacker.example' },
     });
     const res = mockResponse();
 
     const handlerPromise = executeHandler(req, res);
 
     const spawnOptions = mockSpawn.mock.calls[0][2];
-    expect(spawnOptions.env.CUSTOM_VAR).toBe('value123');
-
-    proc.emit('close', 0, null);
-    await handlerPromise;
-  });
-
-  it('ignores non-string env values', async () => {
-    const proc = mockChildProcess();
-    mockSpawn.mockReturnValue(proc);
-
-    const req = mockRequest({
-      prompt: 'hello',
-      env: { VALID: 'ok', INVALID: 42 },
-    });
-    const res = mockResponse();
-
-    const handlerPromise = executeHandler(req, res);
-
-    const spawnOptions = mockSpawn.mock.calls[0][2];
-    expect(spawnOptions.env.VALID).toBe('ok');
-    // INVALID should not be set (or remain as process.env value)
+    expect(spawnOptions.env).toBe(process.env);
+    expect(spawnOptions.env.CUSTOM_VAR).toBeUndefined();
+    expect(spawnOptions.env.ANTHROPIC_BASE_URL).toBeUndefined();
 
     proc.emit('close', 0, null);
     await handlerPromise;

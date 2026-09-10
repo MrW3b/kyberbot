@@ -43,14 +43,30 @@ describe('auth middleware', () => {
       delete process.env.KYBERBOT_API_TOKEN;
     });
 
-    it('should pass through without auth', () => {
+    it('should fail closed — reject every request, never call next', () => {
       const req = mockReq();
       const res = mockRes();
-      let called = false;
-      const next: NextFunction = () => { called = true; };
+      const next: NextFunction = vi.fn();
 
       authMiddleware(req, res, next);
-      expect(called).toBe(true);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res._status).toBe(401);
+      expect(res._body).toMatchObject({
+        error: 'Unauthorized',
+        message: expect.stringContaining('not configured'),
+      });
+    });
+
+    it('should fail closed even with a well-formed Bearer header', () => {
+      const req = mockReq({ authorization: 'Bearer whatever' });
+      const res = mockRes();
+      const next: NextFunction = vi.fn();
+
+      authMiddleware(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res._status).toBe(401);
     });
   });
 
