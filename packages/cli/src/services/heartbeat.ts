@@ -584,7 +584,15 @@ async function tick(root: string): Promise<void> {
       // skip-permissions this replaces, since --permission-mode dontAsk
       // still enforces any Bash(pattern)/path deny rules in the root's
       // settings, which skip-permissions bypassed entirely.
-      allowedTools: ['Bash', 'WebFetch', 'WebSearch', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Agent', 'Skill'],
+      allowedTools: [
+        'Bash', 'WebFetch', 'WebSearch', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Agent', 'Skill',
+        // Read-only claude.ai Notion connector tools, so heartbeat tasks can read
+        // Notion pages through the connector. Read-only on purpose; no
+        // create/update tools here.
+        'mcp__claude_ai_Notion__notion-fetch',
+        'mcp__claude_ai_Notion__notion-search',
+        'mcp__claude_ai_Notion__notion-query-data-sources',
+      ],
       model: getHeartbeatModelForRoot(root),
       system: [
         'You are a heartbeat task executor for a KyberBot agent.',
