@@ -78,9 +78,10 @@ export function createBrainCommand(): Command {
         const answer = await client.complete(fullPrompt, {
           system: systemPrompt,
           model: getModelFor('brain', 'haiku'),
-          // GATE 3 fix (Alfred, 9 Sep 2026): internal answer synthesis over
-          // retrieved context, no tools needed — this is the exact site Chris
-          // hit as `kyberbot brain query` throwing after the GATE 3 regression.
+          // Internal answer synthesis over
+          // retrieved context, no tools needed. Without an explicit list,
+          // `kyberbot brain query` throws now that the skip-permissions
+          // fallback is gone.
           allowedTools: [],
         });
 

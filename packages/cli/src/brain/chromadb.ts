@@ -22,9 +22,9 @@ const DEFAULT_CHROMA_PORT = 8001;
 // some point after this project's docker-compose.yml and container-creation code were
 // written, orphaning the bind mount — the container kept working (health checks only
 // probe the API), but nothing written after that point was landing in the host-bound
-// directory, so it looked backed up and wasn't. Confirmed by inspecting a live
-// container's filesystem (2026-07-31): /chroma/chroma held a single 0-byte decoy
-// chroma.sqlite3, while /data held the real ~1.8GB store. Mount this path, not
+// directory, so it looked backed up and wasn't. Confirmed by inspecting a running
+// container's filesystem: /chroma/chroma held a single 0-byte decoy
+// chroma.sqlite3, while /data held the real store. Mount this path, not
 // /chroma/chroma, whenever creating a new container.
 const CHROMA_DATA_MOUNT_TARGET = '/data';
 

@@ -166,7 +166,7 @@ export async function runSummarizeStep(
         );
 
         const responseText = await withRetry(
-          // GATE 3 fix (Alfred, 9 Sep 2026): internal summarization, no tools needed.
+          // Internal summarization, no tools needed.
           () => claude.complete(prompt, { model: 'haiku', maxTokens: 300, subprocess: true, cwd: root, allowedTools: [] }),
           {
             retries: 2,

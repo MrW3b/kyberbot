@@ -28,6 +28,6 @@ coverage/
 # accidental nested repo copy
 /kyberbot/
 
-# personal + client data — this fork is PUBLIC, never commit these
-template/brain/chris/
-template/brain/buildwithapex/
+# personal data: nothing under template/brain is committed except its README
+template/brain/*
+!template/brain/README.md

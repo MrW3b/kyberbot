@@ -16,16 +16,13 @@ import { createLogger } from '../logger.js';
 const logger = createLogger('agent-spawner');
 
 /**
- * card 86d4aavjr (Chris's ruling, 9 Sep 2026), tightened card 86d4adqh7
- * (Hinata B-R1, 9 Sep 2026): a charter model's usage quota can run out
- * mid-session (observed so far on Fable — see
- * incident_fable_quota_exhausted_blocks_headless_spawns_sep9.md). That exit
- * looks identical to a broken agent from the caller's side: exit 1, EMPTY
- * stderr.
+ * A charter model's usage quota can run out mid-session (observed so far
+ * on Fable). That exit looks identical to a broken agent from the caller's
+ * side: exit 1, EMPTY stderr.
  *
  * The original version of this function pattern-matched against 500 chars
  * of the AGENT's own stdout, including /\b429\b|rate.?limit(ed)?\b/i —
- * Hinata showed 5 of 8 realistic non-quota failures fire that (a quoted
+ * 5 of 8 realistic non-quota failures fire that (a quoted
  * upstream 429, a bare line number, a row count an agent happened to
  * print). Detection has moved into claude.ts's completeSubprocess, which
  * has the actual raw stdout/stderr and computes `quotaExhausted` against
@@ -63,7 +60,7 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
     effort: agent.effort,
     allowedTools: agent.allowedTools,
     disallowedTools: agent.disallowedTools,
-    // GATE 3 (card 86d48zzhe): pin the spawned process's cwd when the
+    // Pin the spawned process's cwd when the
     // agent's frontmatter declares one, so file tools without an explicit
     // --add-dir cannot reach outside it. Falls back to the parent
     // process's cwd (prior behavior) when unset.
@@ -110,20 +107,19 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
     } catch (e) {
       lastError = e as Error;
 
-      // card 86d4aavjr: the charter model's quota is exhausted. This is not
+      // The charter model's quota is exhausted. This is not
       // transient (SF-013's retry-with-delay above is for startup races and
       // rate blips on the SAME model) — retrying claude-fable-5-1 again will
       // fail identically every time until the quota resets. Runtime fallback:
       // retry ONCE on Opus, never touching the charter file, and make the
       // downgrade impossible to miss — logged here at error level, AND
       // prefixed into the response text itself, because a model swap changes
-      // the quality of the work and whoever reads the output (Chris, a
+      // the quality of the work and whoever reads the output (the user, a
       // heartbeat log, `kyberbot agent spawn`'s own stdout) must be told
       // which model actually produced it.
-      // card 86d4adqh7 (Hinata B-R3): compare RESOLVED model ids, not raw
-      // literals. An agent chartered directly on 'claude-opus-5' (neo,
-      // pepper, sherlock) is not the string 'opus', so the old check would
-      // "fall back" onto the exact same exhausted model and guarantee a
+      // Compare RESOLVED model ids, not raw literals. An agent chartered
+      // directly on 'claude-opus-5' is not the string 'opus', so the old
+      // check would "fall back" onto the exact same exhausted model and guarantee a
       // second failure. Resolving both sides through the same alias map
       // catches that regardless of which form the charter uses.
       const resolvedCharterModel = resolveModelAlias(agent.model);
@@ -134,7 +130,7 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
           { detectedFrom: lastError.message.slice(0, 300) }
         );
         try {
-          // card 86d4adqh7 (Hinata B-R2): read the model that actually
+          // Read the model that actually
           // answered back from the run instead of hard-coding it, so the
           // banner can't go stale the next time an alias is repointed.
           let actualModelId = resolvedFallbackModel;
@@ -146,7 +142,7 @@ export async function spawnAgent(name: string, prompt: string): Promise<AgentSpa
           const response = await client.complete(prompt, fallbackOpts);
           const durationMs = Date.now() - start;
           const banner =
-            `[ALFRED RUNTIME FALLBACK — card 86d4aavjr] ${name}'s charter model ` +
+            `[RUNTIME FALLBACK] ${name}'s charter model ` +
             `(${agent.model}) had exhausted its quota. This response was produced by ` +
             `${actualModelId} instead — NOT ${agent.model}. The charter is unchanged; ` +
             `this is a one-time runtime substitution for this call only.\n\n`;

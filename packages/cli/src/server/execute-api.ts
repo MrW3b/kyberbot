@@ -52,7 +52,7 @@ export async function executeHandler(req: Request, res: Response) {
   // ANTHROPIC_BASE_URL to redirect model calls to a caller-controlled server).
   // Grepping every caller in this repo found none that ever sent one, and the
   // endpoint has no genuine need for one, so the parameter is removed rather
-  // than allowlisted (Hinata's /api/execute finding, 10 Sep 2026).
+  // than allowlisted.
   const childEnv = process.env as Record<string, string>;
 
   logger.info(`Executing claude in ${cwd} with ${args.length} args`);

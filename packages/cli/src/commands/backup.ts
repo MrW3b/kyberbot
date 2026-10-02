@@ -77,8 +77,7 @@ function getTemplateDir(): string {
  * structure (e.g. an `archive/` subfolder). Copy-only / additive — never
  * deletes anything on the dest side, even if a file has disappeared from
  * src (that class of drift is a separate, destructive decision left to a
- * caller who's verified recoverability first; see `kyberbot backup verify`
- * and the Alfred custodian log for the reasoning).
+ * caller who's verified recoverability first; see `kyberbot backup verify`).
  *
  * Returns the total number of .md files copied across all directory levels.
  */

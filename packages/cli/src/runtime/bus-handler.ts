@@ -62,7 +62,7 @@ export async function handleIncomingBusMessage(
       maxTokens: 1024,
       subprocess: true,
       cwd: root,
-      // GATE 3 fix (Alfred, 9 Sep 2026): inter-agent bus — a peer agent talking
+      // Inter-agent bus — a peer agent talking
       // to this agent, same allowlist chat-sse.ts's interactive session uses.
       allowedTools: AGENT_FACING_ALLOWED_TOOLS,
     });

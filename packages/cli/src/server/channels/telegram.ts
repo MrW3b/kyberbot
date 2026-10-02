@@ -142,7 +142,7 @@ export class TelegramChannel implements Channel {
           const client = getClaudeClient();
           const prompt = buildPromptWithHistory(convoId, text);
           const systemPrompt = await buildChannelSystemPrompt('telegram');
-          // GATE 3 fix (Alfred, 9 Sep 2026): agent-facing reply — needs its normal
+          // Agent-facing reply — needs its normal
           // capabilities, same allowlist chat-sse.ts's interactive session uses.
           const reply = await client.complete(prompt, { system: systemPrompt, maxTurns: 30, subprocess: true, cwd: this.root, allowedTools: AGENT_FACING_ALLOWED_TOOLS });
 
@@ -208,10 +208,10 @@ export class TelegramChannel implements Channel {
         const client = getClaudeClient();
         const systemPrompt = await buildChannelSystemPrompt('telegram');
         const images: ImageInput[] = [{ data: base64, mediaType: 'image/jpeg' }];
-        // card 86d4adqh7: completeWithImages no longer defaults to
+        // completeWithImages no longer defaults to
         // --dangerously-skip-permissions. Captioning an image needs no
         // tool use at all, so opt in explicitly with an empty allowlist
-        // rather than relying on jarvis root having a sandbox (it doesn't).
+        // rather than relying on the agent root having a sandbox.
         const reply = await client.completeWithImages(prompt, images, { system: systemPrompt, cwd: this.root, allowedTools: [] });
 
         if (!reply || reply.trim().length === 0) {

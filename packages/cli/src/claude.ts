@@ -18,8 +18,7 @@ import { createLogger } from './logger.js';
 const logger = createLogger('claude');
 
 /**
- * GATE 3 (card 86d48zzhe, Alfred, 9 Sep 2026): does this cwd's own
- * .claude/settings.json declare sandbox.enabled:true?
+ * Does this cwd's own .claude/settings.json declare sandbox.enabled:true?
  * Used only to decide whether a no-allowlist spawn is allowed to proceed
  * under --permission-mode dontAsk. Never widens or narrows the sandbox
  * itself — it just refuses to spawn open when there is no sandbox to fall
@@ -99,12 +98,12 @@ export interface CompleteOptions {
     maxConsecutiveToolErrors: number;
   };
   /**
-   * card 86d4adqh7 (Alfred, 9 Sep 2026): when set, completeSubprocess adds
+   * When set, completeSubprocess adds
    * --output-format json (non-streaming calls only) and, on success, calls
    * this with the model id read from the CLI's own JSON `modelUsage` field
    * — the model that actually answered, not the alias requested. Used by
    * the quota-exhaustion fallback in spawner.ts so its banner cannot go
-   * stale the next time an alias is repointed (Hinata's B-R2).
+   * stale the next time an alias is repointed.
    */
   onModelResolved?: (modelId: string) => void;
 }
@@ -112,12 +111,11 @@ export interface CompleteOptions {
 // Model ID mapping. Update when Anthropic publishes new minor versions —
 // the shorthand ('opus') resolves to the current latest model ID here.
 // 'fable' is the reserved top-tier ceiling — available for deliberate
-// high-blast-radius escalation (e.g. Aizen/Sherlock), never a standing default.
+// high-blast-radius escalation by a specific agent, never a standing default.
 const MODEL_IDS: Record<string, string> = {
   haiku: 'claude-haiku-4-5',
   sonnet: 'claude-sonnet-5',
-  // card 86d4adqh7 (Hinata B-R2, 9 Sep 2026): measured live on this host —
-  // `claude -p ... --model opus --output-format json` resolves to
+  // Measured against the CLI: `claude -p ... --model opus --output-format json` resolves to
   // claude-opus-5, not claude-opus-4-8. The alias moved and this map had
   // not been updated; the fallback banner and completeSDK/chatSDK were
   // both quoting the stale id. Do not hand-edit this again from memory —
@@ -143,8 +141,7 @@ export function resolveModelAlias(model: string): string {
  * a human or peer agent is talking to the agent directly and it needs its
  * normal capabilities (Telegram/WhatsApp replies, the inter-agent bus,
  * orchestration heartbeats). Same list chat-sse.ts's interactive session
- * uses. Hoisted per Hinata's R1 fix suggestion (2026-09-09 GATE 3 findings)
- * so these call sites can't drift from each other one at a time.
+ * uses. Hoisted so these call sites can't drift from each other one at a time.
  */
 export const AGENT_FACING_ALLOWED_TOOLS = [
   'Bash', 'WebFetch', 'WebSearch', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Agent', 'Skill',
@@ -252,9 +249,8 @@ export class ClaudeClient {
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const args = ['--print', '-', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
-      // card 86d4adqh7 (Hinata A-R4, 9 Sep 2026): this used to push
-      // --dangerously-skip-permissions unconditionally — the same shape
-      // GATE 3 removed from completeSubprocess, just not removed here too.
+      // This used to push --dangerously-skip-permissions unconditionally —
+      // the same shape already removed from completeSubprocess.
       // Same rule now: an explicit allowedTools list (even an empty one,
       // meaning "no tools needed") runs dontAsk; anything that never
       // opted in and has no sandboxed cwd fails loudly instead of running
@@ -272,7 +268,7 @@ export class ClaudeClient {
       } else {
         throw new Error(
           `Refusing to run a vision completion with --dangerously-skip-permissions removed ` +
-          `and no allowedTools/sandboxed cwd given (card 86d4adqh7). Pass an explicit ` +
+          `and no allowedTools/sandboxed cwd given. Pass an explicit ` +
           `allowedTools list (use [] if the call needs no tools) or run it against a cwd ` +
           `whose .claude/settings.json declares sandbox.enabled:true.`
         );
@@ -295,8 +291,8 @@ export class ClaudeClient {
           CLAUDECODE: '',
           CLAUDE_CODE_ENTRYPOINT: '',
           // Strip API key so claude falls back to subscription auth.
-          // Otherwise spawned claude uses API billing instead of Claude Max,
-          // which fails when the console balance is depleted.
+          // Otherwise spawned claude bills the API key instead of the
+          // subscription login, and fails when that API balance runs out.
           ANTHROPIC_API_KEY: '',
         },
         cwd: opts.cwd,
@@ -347,7 +343,7 @@ export class ClaudeClient {
     model: string,
     opts: CompleteOptions
   ): Promise<string> {
-    // Hinata R6 (2026-09-09 GATE 3 findings): was `MODEL_IDS[model] || MODEL_IDS.opus`,
+    // Was `MODEL_IDS[model] || MODEL_IDS.opus`,
     // which silently collapsed any charter model that is already a full literal id
     // (e.g. claude-opus-4-8, claude-fable-5-1) to MODEL_IDS.opus, because a literal
     // id is never a key in the alias map. resolveModelAlias passes a literal through
@@ -370,7 +366,7 @@ export class ClaudeClient {
     system: string,
     model: string
   ): Promise<string> {
-    // Hinata R6 — same fix as completeSDK above.
+    // Same alias resolution as completeSDK above.
     const modelId = resolveModelAlias(model);
     const response = await this.sdk.messages.create({
       model: modelId,
@@ -387,7 +383,7 @@ export class ClaudeClient {
     return new Promise((resolve, reject) => {
       // Use stream-json format when onChunk is provided for live output
       const useStreamJson = !!opts.onChunk;
-      // card 86d4adqh7: capture the actually-resolved model id for the
+      // Capture the actually-resolved model id for the
       // caller (spawner.ts's fallback banner). Only when explicitly
       // requested and not already streaming, so no existing caller's
       // output shape changes.
@@ -396,14 +392,13 @@ export class ClaudeClient {
       // Headless — no human to answer prompts. With a tool allowlist, dontAsk
       // keeps the permission layer active so Bash(pattern) rules are enforced
       // (skip-permissions bypasses them) and off-list calls are auto-denied.
-      // card 86d4XXXX (Alfred, 9 Sep 2026, second GATE 3 regression pass —
-      // see brain/chris-os/agents/hinata/findings/2026-09-09-gate-alfred-fixes.md
-      // R1): this used to check `opts.allowedTools.length > 0`, which meant an
+      // This used to check `opts.allowedTools.length > 0`, which meant an
       // explicit `allowedTools: []` (the correct, tightest grant for a call
       // that needs zero tools) was indistinguishable from "no list passed at
       // all" and fell into the throw/sandbox-check branch below. That is the
       // bug that made every internal LLM call site in the memory pipeline and
-      // both messaging channels start throwing the moment GATE 3 landed.
+      // both messaging channels start throwing once the skip-permissions
+      // fallback was removed.
       // completeSubprocessWithImages already got this right (checks
       // `!== undefined`); this brings completeSubprocess in line with it.
       if (opts.allowedTools !== undefined) {
@@ -413,13 +408,11 @@ export class ClaudeClient {
           args.push('--permission-mode', 'dontAsk');
         }
       } else {
-        // GATE 3 (card 86d48zzhe): an empty/mis-parsed allowedTools list used to
-        // fall back to --dangerously-skip-permissions, which silently converts a
-        // sandboxed spawn into an unsandboxed one — Hinata's U1 finding
-        // (brain/chris-os/agents/hinata/findings/2026-09-09-verify-neo-sandbox.md):
-        // two spawns volunteered exactly that retry unprompted, stopped only by
-        // this function's own permission mode, not by config. That fallback is
-        // removed. No allowlist now means dontAsk with no tool flags (nothing is
+        // An empty/mis-parsed allowedTools list used to fall back to
+        // --dangerously-skip-permissions, which silently converts a sandboxed
+        // spawn into an unsandboxed one; spawned agents were seen attempting
+        // exactly that retry, stopped only by this function's own permission
+        // mode, not by config. That fallback is removed. No allowlist now means dontAsk with no tool flags (nothing is
         // implicitly allowed), and a cwd without sandbox.enabled:true in its own
         // .claude/settings.json fails loudly instead of running open.
         if (!cwdHasSandboxEnabled(opts.cwd)) {
@@ -427,8 +420,8 @@ export class ClaudeClient {
             `Refusing to spawn without an allowedTools list and without a sandboxed cwd. ` +
             `cwd=${opts.cwd ?? '(unset, parent cwd)'} has no sandbox.enabled:true in ` +
             `.claude/settings.json. The old behavior silently fell back to ` +
-            `--dangerously-skip-permissions; that fallback has been removed (GATE 3, ` +
-            `card 86d48zzhe). Give this agent an allowedTools list, or enable the ` +
+            `--dangerously-skip-permissions; that fallback has been removed. ` +
+            `Give this agent an allowedTools list, or enable the ` +
             `sandbox in its cwd's .claude/settings.json.`
           );
         }
@@ -464,8 +457,8 @@ export class ClaudeClient {
           CLAUDECODE: '',
           CLAUDE_CODE_ENTRYPOINT: '',
           // Strip API key so claude falls back to subscription auth.
-          // Otherwise spawned claude uses API billing instead of Claude Max,
-          // which fails when the console balance is depleted.
+          // Otherwise spawned claude bills the API key instead of the
+          // subscription login, and fails when that API balance runs out.
           ANTHROPIC_API_KEY: '',
         },
         // cwd determines which ~/.claude/projects/<slug> dir Claude Code
@@ -685,7 +678,7 @@ export class ClaudeClient {
           });
           resolve(stdout);
         } else {
-          // card 86d4aavjr: stderr is frequently empty on a quota-exhausted
+          // stderr is frequently empty on a quota-exhausted
           // exit (e.g. the Fable-limit message) — the CLI prints its refusal
           // to stdout, not stderr. Previously that text was dropped here
           // (only `exit code N` reached the caller), so the spawner had
@@ -695,21 +688,21 @@ export class ClaudeClient {
           const stdoutPreview = stdout.slice(0, 500);
           logger.error(`claude subprocess exited with code ${code}`, { stderr: stderr.slice(0, 500), stdoutPreview, subtype: resultSubtype });
           const err = new Error(`claude subprocess failed: ${stderr.slice(0, 500) || stdoutPreview || `exit code ${code}${resultSubtype ? ` (${resultSubtype})` : ''}`}`);
-          // card 86d4adqh7 (Hinata B-R1, 9 Sep 2026): the prior pattern
+          // The prior pattern
           // matched /\b429\b|rate.?limit(ed)?\b/i against this same
           // 500-char stdout preview, which is arbitrary agent-generated
           // text — 5 of 8 realistic non-quota failures (a quoted upstream
           // 429, a line number, a row count) fired it. Constrain what
           // "quota exhausted" means to the CLI's OWN refusal shape,
-          // measured directly (Hinata: exit 1, empty stderr, ~149-byte
+          // measured directly (exit 1, empty stderr, ~149-byte
           // stdout that IS the refusal, nothing else): stderr must be
           // empty, stdout must be short (real work never fits under this),
           // and the whole trimmed stdout — not a substring anywhere in
           // it — must start with the CLI's exact wording. Anything that
           // doesn't cleanly match this shape is NOT flagged as quota —
-          // spawner.ts fails loudly on it instead of silently retrying,
-          // per Chris's 9 Sep ruling to prefer a loud failure over a
-          // misclassified retry when the two can't be told apart.
+          // spawner.ts fails loudly on it instead of silently retrying:
+          // a loud failure beats a misclassified retry when the two can't
+          // be told apart.
           const QUOTA_REFUSAL_PATTERN = /^You(?:'|’)ve reached your [^.\n]{0,60}?\blimit\b/i;
           (err as { quotaExhausted?: boolean }).quotaExhausted =
             stderr.trim() === '' &&

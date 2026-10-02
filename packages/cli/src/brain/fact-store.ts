@@ -325,8 +325,8 @@ export async function retractFact(
 
   // Drop the embedding too. Retraction is otherwise cosmetic at the search
   // surface: `kyberbot search` queries ChromaDB directly and never consults
-  // is_retracted / is_latest, so a retracted fact keeps ranking — this is how a
-  // false claim about a real person survived retraction on 2026-09-01.
+  // is_retracted / is_latest, so a retracted fact keeps ranking, and a false
+  // claim survives its own retraction.
   // Mirrors the id built in storeFact; best-effort, never fails the retraction.
   if (row?.source_path && isChromaAvailable()) {
     const chromaId = `fact_${row.source_path.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -387,8 +387,8 @@ export async function getFactsForEntity(
   const db = await getTimelineDb(root);
 
   // Exact membership match via json_each — a substring LIKE would also match
-  // entities whose names merely contain the queried name (e.g. "Alvin" would
-  // pull facts tagged "Alvin Goh"), attributing facts to the wrong entity.
+  // entities whose names merely contain the queried name (e.g. "Ann" would
+  // pull facts tagged "Ann Lee"), attributing facts to the wrong entity.
   let sql = `
     SELECT id, content, source_path, source_conversation_id, entities_json,
            timestamp, confidence, category, created_at,
@@ -473,7 +473,7 @@ export async function markFactSuperseded(
  * retracted before that fix existed, and `is_latest = 0` marks superseded facts
  * that were never retracted at all. Any of those still sit in Chroma, and the
  * search path reads Chroma directly, so without this check a false claim keeps
- * ranking after being retracted — exactly what happened on 2026-09-01.
+ * ranking after being retracted.
  *
  * Non-fact documents (conversations, notes, files) have no row here and are
  * never filtered. Fails open: if the lookup throws, callers show their results

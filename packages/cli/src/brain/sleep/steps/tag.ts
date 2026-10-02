@@ -79,7 +79,7 @@ Content:
 ${content}
 
 Example response: ["meeting", "pricing", "strategy", "planning"]`,
-            // GATE 3 fix (Alfred, 9 Sep 2026): internal tagging, no tools needed.
+            // Internal tagging, no tools needed.
             { model: 'haiku', maxTokens: 500, subprocess: true, cwd: root, allowedTools: [] }
           ),
           {

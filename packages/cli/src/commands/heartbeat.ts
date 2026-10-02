@@ -246,11 +246,10 @@ export function createHeartbeatCommand(): Command {
       try {
         const client = getClaudeClient();
         const result = await client.complete(prompt, {
-          // card 86d4adqh7 (Alfred, 9 Sep 2026): this manual `kyberbot
-          // heartbeat run` entry point had no cwd/allowedTools, so GATE 3's
-          // same-day removal of the silent skip-permissions fallback
-          // (commit 3d3eb8f) broke it outright — found by the verification
-          // this fix pass required. Same ceiling as the scheduled tick in
+          // This manual `kyberbot heartbeat run` entry point had no
+          // cwd/allowedTools, so removing the silent skip-permissions
+          // fallback (commit 3d3eb8f) broke it outright. Same ceiling as the
+          // scheduled tick in
           // services/heartbeat.ts and chat-sse.ts's headless full-tool
           // sessions, not a new trust grant.
           subprocess: true,

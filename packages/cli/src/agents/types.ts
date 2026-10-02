@@ -13,7 +13,7 @@ export interface AgentManifest {
   effort?: string;
   'max-turns'?: number;
   /**
-   * Working directory pin (GATE 3, card 86d48zzhe). When set, the spawned
+   * Working directory pin. When set, the spawned
    * claude process runs with this as its cwd, so file tools without an
    * explicit --add-dir cannot reach outside it. Absolute path.
    */
@@ -49,9 +49,9 @@ export interface AgentSpawnResult {
   model: string;
   durationMs: number;
   /**
-   * Set only when a runtime quota fallback fired (card 86d4aavjr, Chris's
-   * ruling 9 Sep 2026): the charter's own model ran out of quota mid-spawn,
-   * so this ONE call was retried on Opus instead of dying. The charter file
+   * Set only when a runtime quota fallback fired: the charter's own model
+   * ran out of quota mid-spawn, so this ONE call was retried on Opus instead
+   * of dying. The charter file
    * itself is never edited — this is visible, logged, one-shot, per-call.
    */
   modelFallback?: {

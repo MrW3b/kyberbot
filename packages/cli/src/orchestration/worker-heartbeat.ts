@@ -353,7 +353,7 @@ export async function runWorkerHeartbeat(
                 maxIdenticalToolCalls: loopDetection.maxIdenticalToolCalls,
                 maxConsecutiveToolErrors: loopDetection.maxConsecutiveToolErrors,
               },
-              // GATE 3 fix (Alfred, 9 Sep 2026): unlike the CEO, the worker
+              // Unlike the CEO, the worker
               // actually does the task (creates deliverable files, per its own
               // prompt above) — needs real tools, same allowlist chat-sse.ts's
               // interactive session uses.

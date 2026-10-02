@@ -67,8 +67,8 @@ export function getIdentity(): IdentityConfig {
   const raw = readFileSync(identityPath, 'utf-8');
   _identity = yaml.load(raw) as IdentityConfig;
 
-  // Env fallback for secrets that should not live in tracked identity.yaml
-  // (card 86d48j24n / diagnostic M9, Alfred 2026-09-06). dotenv loads at the
+  // Env fallback for secrets that should not live in tracked identity.yaml.
+  // dotenv loads at the
   // top of cli.ts before any command handler runs getIdentity(), so
   // process.env is already populated here — no laziness needed.
   if (_identity.channels?.telegram) {

@@ -150,7 +150,7 @@ function localDateTime(now: Date, tz: string, dayOffset: number, h: number, m: n
 
 /**
  * Compute the most recent target instant at-or-before `now` for a time-of-day
- * schedule (e.g. `daily 21:00 SGT`, `weekly Sunday 20:00 SGT`). Returns null
+ * schedule (e.g. `daily 21:00 UTC`, `weekly Sunday 20:00 UTC`). Returns null
  * when the schedule has no time-of-day component we recognise.
  */
 function mostRecentTargetInstant(schedule: string, fallbackTz: string, now: Date): Date | null {
@@ -184,7 +184,7 @@ function mostRecentTargetInstant(schedule: string, fallbackTz: string, now: Date
     return candidate;
   }
 
-  // monthly last-DOW HH:MM [TZ] — e.g. `monthly last-sunday 20:00 SGT`
+  // monthly last-DOW HH:MM [TZ] — e.g. `monthly last-sunday 20:00 UTC`
   const monthlyLastDow = s.match(
     /^monthly\s+last-([a-z]+)\s+(\d{1,2}):(\d{2})(?:\s+([a-z/_+\-0-9]+))?/,
   );
@@ -239,7 +239,7 @@ function mostRecentTargetInstant(schedule: string, fallbackTz: string, now: Date
  * Decide whether a parsed task is due given its last-check timestamp.
  * Handles `every Nm|Nh|Nd`, `daily [HH:MM TZ]`, `weekly [DAY HH:MM TZ]`, and
  * `monthly`. Time-of-day variants compare against the most recent target
- * instant, so `daily 21:00 SGT` does not fire at 02:00 SGT just because >24h
+ * instant, so `daily 21:00 UTC` does not fire at 02:00 UTC just because >24h
  * elapsed. Unknown syntax is conservatively treated as due.
  */
 function isTaskDue(
@@ -473,9 +473,9 @@ async function tick(root: string): Promise<void> {
 
   // Deterministic task selection: parse schedules, pick the single most
   // overdue task, and tell Claude exactly which one to run. Before this,
-  // task selection was delegated to Claude — which led to brain-health
-  // monopolising every tick because it was always seen as "due" while
-  // time-of-day tasks (e.g. `daily 21:00 SGT`) were misinterpreted.
+  // task selection was delegated to Claude — which led to one always-due
+  // task monopolising every tick while time-of-day tasks
+  // (e.g. `daily 21:00 UTC`) were misinterpreted.
   const fallbackTz =
     getIdentityForRoot(root).timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const tasks = parseHeartbeatTasks(content);
@@ -567,18 +567,16 @@ async function tick(root: string): Promise<void> {
 
     const client = getClaudeClient();
     const result = await client.complete(prompt, {
-      maxTurns: 40, // was 15 — too low for large sweeps (Brain Health Check diffs 1,093 files and exhausted it every tick, 2026-09-01)
+      maxTurns: 40, // was 15 — too low for large sweeps (a task diffing ~1,000 files exhausted it every tick)
       subprocess: true,
       cwd: root,
-      // card 86d4adqh7 (Alfred, 9 Sep 2026): GATE 3 (commit 3d3eb8f, same
-      // day) removed completeSubprocess's silent --dangerously-skip-permissions
-      // fallback for any call with no allowedTools and no sandboxed cwd.
-      // This heartbeat tick is exactly that shape — the top-level scheduled
-      // loop, no allowlist, cwd = the agent's own root which has no
-      // sandbox.enabled — so every tick since 19:39 SGT threw instead of
-      // running (caught here by required `kyberbot heartbeat run`
-      // verification, not by anything upstream). Restoring it with an
-      // explicit allowlist rather than reverting GATE 3: reuse the exact
+      // Commit 3d3eb8f removed completeSubprocess's silent
+      // --dangerously-skip-permissions fallback for any call with no
+      // allowedTools and no sandboxed cwd. This heartbeat tick is exactly
+      // that shape — the top-level scheduled loop, no allowlist, cwd = the
+      // agent's own root, which need not have sandbox.enabled — so without
+      // an allowlist every tick throws instead of running. Restored with an
+      // explicit allowlist rather than reverting that removal: reuse the exact
       // ceiling chat-sse.ts already runs headless full-tool sessions under
       // (server/chat-sse.ts chatViaSubprocess) — strictly narrower than the
       // skip-permissions this replaces, since --permission-mode dontAsk

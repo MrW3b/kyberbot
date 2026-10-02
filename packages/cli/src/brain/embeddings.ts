@@ -254,8 +254,7 @@ interface TextChunk {
  * no spaces) gets hard-sliced so nothing downstream can ever exceed maxLen
  * regardless of source punctuation or whitespace.
  *
- * This is the fix for SF-030 (see custodian-craft.md, 2026-07-31 /
- * finding-chromadb-chunker-silent-embed-failure-jul28.md): unpunctuated
+ * This is the fix for SF-030: unpunctuated
  * transcript text produced a single "sentence" tens of thousands of
  * characters long, which chunkText previously passed through untouched —
  * either rejected outright by the embedding API's 8192-token ceiling, or
@@ -411,7 +410,7 @@ export async function indexDocument(
     // try/catch (store-conversation.ts's two call sites) or needs the
     // failure to be loud (commands/brain.ts's `add`, which has no catch of
     // its own around this call and relies on this throw reaching its outer
-    // try/catch to print red + exit(1)). See SF-030 / custodian-log 2026-07-31.
+    // try/catch to print red + exit(1)). See SF-030.
     logger.error(`Failed to index ${id}`, { error: String(error) });
     throw error;
   }

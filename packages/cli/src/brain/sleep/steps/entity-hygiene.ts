@@ -311,7 +311,7 @@ export async function runEntityHygieneStep(
         const client = getClaudeClient();
         const profileText = await client.complete(
           `Write a concise 2-sentence profile for this ${entity.type}. Be factual, third person, specific. Do not start with "Based on..." or reference data sources.\n\nEntity: ${entity.name} (${entity.type})\nFacts:\n${factList}`,
-          // GATE 3 fix (Alfred, 9 Sep 2026): internal profile writing, no tools needed.
+          // Internal profile writing, no tools needed.
           { model: 'haiku', maxTokens: 200, maxTurns: 1, subprocess: true, cwd: root, allowedTools: [] }
         );
 
@@ -649,7 +649,7 @@ Rules:
 - A person and a company with the same name are usually DIFFERENT unless context clearly shows they refer to the same thing.
 
 Return ONLY the JSON array, no other text.`,
-      // GATE 3 fix (Alfred, 9 Sep 2026): internal merge assessment, no tools needed.
+      // Internal merge assessment, no tools needed.
       { model: 'haiku', maxTokens: 1500, subprocess: true, cwd: root, allowedTools: [] }
     ),
     {

@@ -58,11 +58,9 @@ export function authMiddleware(
   if (!envToken) {
     // Fail closed, not open. A missing token is a misconfiguration, not an
     // invitation — a warning at boot is not a gate. Every authenticated
-    // route rejects until KYBERBOT_API_TOKEN is set (card: Hinata's
-    // /api/execute fail-open finding, 10 Sep 2026). Observed at runtime,
-    // not theoretical: a dotenv load returned zero variables during an
-    // agent spawn on 9 Sep, so "unset at runtime" is a state this process
-    // actually reaches, not just a fresh-install default.
+    // route rejects until KYBERBOT_API_TOKEN is set. "Unset at runtime" is a
+    // state this process can actually reach (a dotenv load can return zero
+    // variables in a spawned context), not just a fresh-install default.
     logger.error('Rejecting request — server is unconfigured (KYBERBOT_API_TOKEN not set)', {
       path: req.path,
       ip: req.ip,

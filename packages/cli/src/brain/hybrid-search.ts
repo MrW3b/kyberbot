@@ -197,8 +197,8 @@ Ranking (JSON array of numbers):`;
       maxTokens: 200,
       maxTurns: 1,
       subprocess: true,
-      // GATE 3 fix (Alfred, 9 Sep 2026): internal re-ranking call, no tools
-      // needed — explicit [] is the tightest opt-in (card 86d48zzhe regression).
+      // Internal re-ranking call, no tools
+      // needed — explicit [] is the tightest opt-in.
       allowedTools: [],
     });
 
