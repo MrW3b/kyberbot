@@ -8,6 +8,7 @@
 import chalk from 'chalk';
 import { ServiceStatus } from './types.js';
 import { getAgentName } from './config.js';
+import { maskSecret } from './utils/mask.js';
 
 // Color palette
 const EMERALD = chalk.hex('#50C878');  // Primary — logo, branding
@@ -158,7 +159,9 @@ export function displayConnectionInfo(info: {
     console.log(`  ${DIM('Remote:')}   ${EMERALD(tunnelUrl)}`);
   }
   if (apiToken) {
-    console.log(`  ${DIM('API Key:')}  ${apiToken}`);
+    // Masked: boot output often lands in log files. The full value is one
+    // deliberate command away.
+    console.log(`  ${DIM('API Key:')}  ${maskSecret(apiToken)}  ${DIM('(kyberbot token show)')}`);
   }
   console.log('');
 }

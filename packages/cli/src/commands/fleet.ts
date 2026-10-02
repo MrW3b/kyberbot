@@ -18,6 +18,7 @@ import chalk from 'chalk';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { join, resolve } from 'path';
 import yaml from 'js-yaml';
+import { maskSecret } from '../utils/mask.js';
 import {
   loadRegistry,
   saveRegistry,
@@ -361,7 +362,7 @@ export function createFleetCommand(): Command {
           console.log(`    ${DIM('Tunnel:')}    ${ACCENT(tunnelUrl)}`);
         }
         if (agentToken) {
-          console.log(`    ${DIM('API Key:')}   ${agentToken}`);
+          console.log(`    ${DIM('API Key:')}   ${maskSecret(agentToken)}  ${DIM('(kyberbot token show)')}`);
         }
         console.log();
       }
