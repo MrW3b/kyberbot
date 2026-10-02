@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
@@ -52,6 +52,9 @@ vi.mock('../brain/hybrid-search.js', () => ({
 const { createBrainRouter } = await import('./brain-api.js');
 const { authMiddleware } = await import('../middleware/auth.js');
 
+// One token for the whole file: getApiToken() caches the first value it reads.
+const TOKEN = 'test-auth-token-xyz';
+
 /**
  * Build a minimal Express app matching the real server's route structure,
  * but without channels, static file serving, or listening on a port.
@@ -78,15 +81,22 @@ function createTestApp() {
 describe('server routes', () => {
   let app: express.Express;
 
+  // authMiddleware fails closed when KYBERBOT_API_TOKEN is unset, so these
+  // route tests run with a token set and send it on every request.
+  const api = () => request.agent(app).set('Authorization', `Bearer ${TOKEN}`);
+
   beforeAll(() => {
-    // Ensure auth is disabled for most tests
-    delete process.env.KYBERBOT_API_TOKEN;
+    process.env.KYBERBOT_API_TOKEN = TOKEN;
     app = createTestApp();
+  });
+
+  afterAll(() => {
+    delete process.env.KYBERBOT_API_TOKEN;
   });
 
   describe('GET /health', () => {
     it('should return status ok', async () => {
-      const res = await request(app).get('/health');
+      const res = await api().get('/health');
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('ok');
@@ -97,7 +107,7 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/health', () => {
     it('should return brain health', async () => {
-      const res = await request(app).get('/brain/health');
+      const res = await api().get('/brain/health');
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('ok');
@@ -106,14 +116,14 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/entities', () => {
     it('should return empty results', async () => {
-      const res = await request(app).get('/brain/entities');
+      const res = await api().get('/brain/entities');
 
       expect(res.status).toBe(200);
       expect(res.body.results).toEqual([]);
     });
 
     it('should accept query parameters', async () => {
-      const res = await request(app)
+      const res = await api()
         .get('/brain/entities')
         .query({ q: 'test', type: 'person', limit: '5' });
 
@@ -124,7 +134,7 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/entities/:nameOrId', () => {
     it('should return 404 for unknown entity', async () => {
-      const res = await request(app).get('/brain/entities/unknown');
+      const res = await api().get('/brain/entities/unknown');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Entity not found');
@@ -133,7 +143,7 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/entities-stats', () => {
     it('should return stats', async () => {
-      const res = await request(app).get('/brain/entities-stats');
+      const res = await api().get('/brain/entities-stats');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('entities');
@@ -142,7 +152,7 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/timeline', () => {
     it('should return empty events', async () => {
-      const res = await request(app).get('/brain/timeline');
+      const res = await api().get('/brain/timeline');
 
       expect(res.status).toBe(200);
       expect(res.body.events).toEqual([]);
@@ -151,7 +161,7 @@ describe('server routes', () => {
 
   describe('Brain API — GET /brain/timeline-stats', () => {
     it('should return stats', async () => {
-      const res = await request(app).get('/brain/timeline-stats');
+      const res = await api().get('/brain/timeline-stats');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('total');
@@ -160,7 +170,7 @@ describe('server routes', () => {
 
   describe('Brain API — POST /brain/search', () => {
     it('should require query in body', async () => {
-      const res = await request(app)
+      const res = await api()
         .post('/brain/search')
         .send({});
 
@@ -169,7 +179,7 @@ describe('server routes', () => {
     });
 
     it('should accept valid search', async () => {
-      const res = await request(app)
+      const res = await api()
         .post('/brain/search')
         .send({ query: 'test query' });
 
@@ -181,7 +191,17 @@ describe('server routes', () => {
 });
 
 describe('server auth integration', () => {
-  const TOKEN = 'test-auth-token-xyz';
+
+  it('should fail closed with 401 when the server token is unset', async () => {
+    delete process.env.KYBERBOT_API_TOKEN;
+    const app = createTestApp();
+
+    const res = await request(app)
+      .get('/brain/health')
+      .set('Authorization', 'Bearer anything');
+
+    expect(res.status).toBe(401);
+  });
 
   it('should reject authenticated routes without token', async () => {
     process.env.KYBERBOT_API_TOKEN = TOKEN;

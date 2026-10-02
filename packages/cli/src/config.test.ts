@@ -1,5 +1,55 @@
-import { describe, it, expect } from 'vitest';
-import { parseDuration } from './config.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { parseDuration, getServerHost, isLoopbackHost, urlHost } from './config.js';
+
+describe('isLoopbackHost', () => {
+  it('recognises loopback names and addresses', () => {
+    for (const h of ['127.0.0.1', '127.0.0.2', 'localhost', '::1']) expect(isLoopbackHost(h)).toBe(true);
+  });
+
+  it('rejects wildcard and LAN addresses', () => {
+    for (const h of ['0.0.0.0', '::', '192.168.1.20']) expect(isLoopbackHost(h)).toBe(false);
+  });
+});
+
+describe('getServerHost', () => {
+  const saved = process.env.KYBERBOT_HOST;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.KYBERBOT_HOST;
+    else process.env.KYBERBOT_HOST = saved;
+  });
+
+  it('defaults to loopback', () => {
+    delete process.env.KYBERBOT_HOST;
+    expect(getServerHost()).toBe('127.0.0.1');
+  });
+
+  it('treats a blank value as unset', () => {
+    process.env.KYBERBOT_HOST = '   ';
+    expect(getServerHost()).toBe('127.0.0.1');
+  });
+
+  it('honours KYBERBOT_HOST, trimmed', () => {
+    process.env.KYBERBOT_HOST = ' 0.0.0.0 ';
+    expect(getServerHost()).toBe('0.0.0.0');
+  });
+});
+
+describe('urlHost', () => {
+  it('shows wildcard binds as localhost', () => {
+    expect(urlHost('0.0.0.0')).toBe('localhost');
+    expect(urlHost('::')).toBe('localhost');
+  });
+
+  it('keeps specific IPv4 addresses and names', () => {
+    expect(urlHost('127.0.0.1')).toBe('127.0.0.1');
+    expect(urlHost('192.168.1.20')).toBe('192.168.1.20');
+    expect(urlHost('localhost')).toBe('localhost');
+  });
+
+  it('brackets IPv6 literals', () => {
+    expect(urlHost('::1')).toBe('[::1]');
+  });
+});
 
 describe('parseDuration', () => {
   it('should parse seconds', () => {

@@ -112,6 +112,30 @@ export function getServerPort(): number {
   return getIdentity().server?.port || 3456;
 }
 
+export const DEFAULT_SERVER_HOST = '127.0.0.1';
+
+/**
+ * Interface the HTTP server binds to. Loopback by default: the API can spawn
+ * Claude Code, so it should not be reachable from other machines unless the
+ * operator says so. A tunnel (ngrok) forwards to localhost and is unaffected.
+ * Set KYBERBOT_HOST=0.0.0.0 to listen on every interface (deliberate LAN use).
+ * A specific non-loopback address also binds, but the tunnel and the CLI's own
+ * commands call http://localhost:<port> and will not reach it.
+ */
+export function getServerHost(): string {
+  return process.env.KYBERBOT_HOST?.trim() || DEFAULT_SERVER_HOST;
+}
+
+export function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '::1' || host.startsWith('127.');
+}
+
+/** Host part for a printable URL to a server bound on `host`. */
+export function urlHost(host: string): string {
+  if (host === '0.0.0.0' || host === '::') return 'localhost';
+  return host.includes(':') ? `[${host}]` : host;
+}
+
 /**
  * Get Claude mode.
  * Config values: 'subscription' | 'sdk'

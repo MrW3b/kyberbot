@@ -152,7 +152,7 @@ The WhatsApp session is stored in `data/whatsapp-auth/` and persists across rest
 
 Telegram and WhatsApp both use outbound connections, so no inbound ports are required for messaging.
 
-If you do expose port 3456, set `KYBERBOT_API_TOKEN` in `.env` to secure the brain endpoints.
+The server listens on `127.0.0.1` (this machine only) by default, so port 3456 is not reachable from outside even when the firewall allows it. To expose it deliberately, set `KYBERBOT_HOST=0.0.0.0` in `.env` and restart. (A specific interface address also works, but then the tunnel and local `kyberbot` commands, which call `localhost`, cannot reach the server.) Set `KYBERBOT_API_TOKEN` as well: without it every authenticated endpoint answers 401. A tunnel (`kyberbot tunnel`) forwards to localhost and needs neither change.
 
 ---
 
@@ -198,7 +198,7 @@ Point an external uptime monitor (UptimeRobot, Healthchecks.io, etc.) at:
 http://your-vps-ip:3456/health
 ```
 
-This returns `{ "status": "ok" }` when the server is running.
+This returns `{ "status": "ok" }` when the server is running. An external monitor can only reach it when `KYBERBOT_HOST` exposes the port (see Firewall above).
 
 ---
 

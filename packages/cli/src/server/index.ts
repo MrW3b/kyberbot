@@ -9,7 +9,7 @@
 
 import express from 'express';
 import { createLogger } from '../logger.js';
-import { getServerPort, getIdentity, getRoot } from '../config.js';
+import { getServerPort, getServerHost, isLoopbackHost, urlHost, getIdentity, getRoot } from '../config.js';
 import { authMiddleware, getApiToken } from '../middleware/auth.js';
 import { createAgentRouter, mountWebUi } from './agent-router.js';
 import { ServiceHandle } from '../types.js';
@@ -19,6 +19,7 @@ import { Channel } from './channels/types.js';
 import { getMetrics, errorMiddleware } from '../monitoring.js';
 import { getServiceStatuses } from '../orchestrator.js';
 import http from 'http';
+import type { AddressInfo } from 'net';
 
 const logger = createLogger('server');
 
@@ -32,25 +33,9 @@ export async function startServer(options: {
   const root = getRoot();
   const app = express();
   const port = getServerPort();
+  const host = getServerHost();
 
   app.use(express.json());
-
-  // card 86d4adqh7 (Alfred, 9 Sep 2026, per Hinata's endpoint inventory):
-  // authMiddleware silently no-ops every request when KYBERBOT_API_TOKEN
-  // is unset — a correct default for a brand-new install with no tunnel,
-  // but silent if it goes missing on an install that already has one up.
-  // The three agent-spawn/execute endpoints behind the ngrok tunnel would
-  // then accept any request with no signal anywhere that they had. This
-  // does not change gating (the token still works exactly as before when
-  // set) — it just stops that specific failure from being silent.
-  if (!process.env.KYBERBOT_API_TOKEN) {
-    logger.warn(
-      'KYBERBOT_API_TOKEN is not set — the agent/execute/management API endpoints ' +
-      'are running with NO authentication. If a tunnel (ngrok) is active, anyone who ' +
-      'reaches it can spawn agents and run commands as this user. Set ' +
-      'KYBERBOT_API_TOKEN in .env to close this.'
-    );
-  }
 
   // Public health endpoint — comprehensive system status
   app.get('/health', (_req, res) => {
@@ -113,16 +98,24 @@ export async function startServer(options: {
       }
     });
 
-    server.listen(port, () => {
-      logger.info(`Server listening on port ${port}`);
+    server.listen(port, host, () => {
+      const bound = server.address() as AddressInfo;
+      const base = `http://${urlHost(host)}:${bound.port}`;
+      logger.info(`Server listening on ${base}`);
+      if (!isLoopbackHost(host)) {
+        logger.warn(`Server bound to ${host} (KYBERBOT_HOST), not loopback: other machines that can reach this address can reach the API.`);
+      }
 
+      // authMiddleware fails closed: with no token, every authenticated route
+      // answers 401. Say that, so an unset token reads as "API unavailable",
+      // not as an open API and not as a silent outage.
       if (process.env.KYBERBOT_API_TOKEN) {
         logger.info('API authentication enabled');
       } else {
-        logger.warn('API authentication DISABLED — brain endpoints are publicly accessible on this network. Set KYBERBOT_API_TOKEN in .env to secure them.');
+        logger.warn('KYBERBOT_API_TOKEN is not set: every authenticated API endpoint (agent, execute, management, brain) will reject requests with 401 until it is set in .env.');
       }
 
-      logger.info(`Web UI: http://localhost:${port}/ui`);
+      logger.info(`Web UI: ${base}/ui`);
 
       resolve({
         stop: async () => {

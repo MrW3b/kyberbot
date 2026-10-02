@@ -10,7 +10,7 @@ import http from 'http';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { createLogger } from '../logger.js';
-import { getIdentityForRoot } from '../config.js';
+import { getIdentityForRoot, getServerHost, isLoopbackHost, urlHost } from '../config.js';
 import { loadRegistry } from '../registry.js';
 import { AgentRuntime, AgentRuntimeStatus } from './agent-runtime.js';
 import { AgentBus, setActiveBus } from './agent-bus.js';
@@ -332,11 +332,15 @@ export class FleetManager {
     // Error middleware
     this.app.use(errorMiddleware);
 
-    // Start server
+    // Start server (loopback unless KYBERBOT_HOST says otherwise; see getServerHost)
+    const host = getServerHost();
     this.server = http.createServer(this.app);
     await new Promise<void>((resolve) => {
-      this.server!.listen(port, () => {
-        logger.info(`Fleet server listening on port ${port}`);
+      this.server!.listen(port, host, () => {
+        logger.info(`Fleet server listening on http://${urlHost(host)}:${port}`);
+        if (!isLoopbackHost(host)) {
+          logger.warn(`Fleet server bound to ${host} (KYBERBOT_HOST), not loopback: other machines that can reach this address can reach the API.`);
+        }
         logger.info(`Agents: ${[...this.agents.keys()].join(', ')}`);
 
         if (this.agents.size === 1) {
@@ -393,8 +397,8 @@ export class FleetManager {
         agentApp.use(errorMiddleware);
 
         const agentServer = http.createServer(agentApp);
-        agentServer.listen(agentPort, () => {
-          logger.info(`Agent ${name} also listening on port ${agentPort}`);
+        agentServer.listen(agentPort, host, () => {
+          logger.info(`Agent ${name} also listening on http://${urlHost(host)}:${agentPort}`);
         });
         this.agentServers.push(agentServer);
       } catch (error) {
