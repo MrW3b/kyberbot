@@ -148,7 +148,7 @@ The WhatsApp session is stored in `data/whatsapp-auth/` and persists across rest
 | Port | Purpose | Needs to Be Open? |
 |------|---------|-------------------|
 | 3456 | KyberBot REST API | Only if you want external access to brain endpoints |
-| 8000 | ChromaDB | No — only accessed locally |
+| 8001 | ChromaDB | No — published on 127.0.0.1 only, accessed locally |
 
 Telegram and WhatsApp both use outbound connections, so no inbound ports are required for messaging.
 

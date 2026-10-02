@@ -40,6 +40,24 @@ function getChromaPort(): number {
   return DEFAULT_CHROMA_PORT;
 }
 
+/**
+ * `docker run` arguments for a new ChromaDB container. The port is published on
+ * 127.0.0.1 only: Chroma has no auth of its own, and a bare `-p host:container`
+ * makes Docker listen on every host interface. KyberBot reaches it at
+ * http://localhost:<port>. Data lives on the host bind mount `dataDir`.
+ */
+export function chromaRunArgs(dataDir: string): string[] {
+  return [
+    'run', '-d',
+    '--name', CONTAINER_NAME,
+    '-p', `127.0.0.1:${getChromaPort()}:8000`,
+    '-v', `${dataDir}:${CHROMA_DATA_MOUNT_TARGET}`,
+    '-e', 'IS_PERSISTENT=TRUE',
+    '-e', 'ANONYMIZED_TELEMETRY=FALSE',
+    'chromadb/chroma:latest',
+  ];
+}
+
 async function isDockerRunning(): Promise<boolean> {
   try {
     execSync('docker info', { stdio: 'ignore' });
@@ -197,15 +215,7 @@ export async function startChromaDB(rootDir: string): Promise<ServiceHandle> {
         // Create new container
         const dataDir = join(rootDir, 'data', 'chromadb');
         logger.info('Creating fresh ChromaDB container...');
-        execFileSync('docker', [
-          'run', '-d',
-          '--name', CONTAINER_NAME,
-          '-p', `${getChromaPort()}:8000`,
-          '-v', `${dataDir}:${CHROMA_DATA_MOUNT_TARGET}`,
-          '-e', 'IS_PERSISTENT=TRUE',
-          '-e', 'ANONYMIZED_TELEMETRY=FALSE',
-          'chromadb/chroma:latest',
-        ], { stdio: 'pipe' });
+        execFileSync('docker', chromaRunArgs(dataDir), { stdio: 'pipe' });
 
         logger.info('Waiting for ChromaDB to be ready...');
         healthy = await waitForChromaDB(45000);
@@ -234,15 +244,7 @@ export async function startChromaDB(rootDir: string): Promise<ServiceHandle> {
       }
 
       logger.info('Starting ChromaDB container...');
-      execFileSync('docker', [
-        'run', '-d',
-        '--name', CONTAINER_NAME,
-        '-p', `${getChromaPort()}:8000`,
-        '-v', `${dataDir}:${CHROMA_DATA_MOUNT_TARGET}`,
-        '-e', 'IS_PERSISTENT=TRUE',
-        '-e', 'ANONYMIZED_TELEMETRY=FALSE',
-        'chromadb/chroma:latest',
-      ], { stdio: 'pipe' });
+      execFileSync('docker', chromaRunArgs(dataDir), { stdio: 'pipe' });
 
       // Wait for ChromaDB to be healthy
       logger.info('Waiting for ChromaDB to be ready...');

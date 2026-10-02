@@ -5,7 +5,9 @@ services:
     image: chromadb/chroma:latest
     container_name: kyberbot-chromadb
     ports:
-      - "8001:8000"
+      # Loopback only: Chroma has no auth, and a bare "8001:8000" listens on
+      # every host interface.
+      - "127.0.0.1:8001:8000"
     volumes:
       # chromadb/chroma:latest persists to /data internally (not /chroma/chroma —
       # that was an older image's default and silently changed; see
