@@ -28,6 +28,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { paths, getRoot, getBackupConfig, getAgentName, getClaudeMemorySourcePath } from '../config.js';
+import { getCollectionNameForRoot } from '../brain/embeddings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -423,7 +424,8 @@ export function createBackupCommand(): Command {
       console.log(chalk.dim('2. ChromaDB vector store'));
       {
         const chromaUrl = (process.env.CHROMA_URL || 'http://localhost:8001').replace(/\/$/, '');
-        const collectionName = process.env.CHROMA_COLLECTION || 'kyberbot_jarvis';
+        // Same derivation the embeddings layer writes with (kyberbot_<agent name>).
+        const collectionName = process.env.CHROMA_COLLECTION || getCollectionNameForRoot();
         const tenant = process.env.CHROMA_TENANT || 'default_tenant';
         const database = process.env.CHROMA_DATABASE || 'default_database';
         const apiBase = `${chromaUrl}/api/v2/tenants/${tenant}/databases/${database}/collections`;

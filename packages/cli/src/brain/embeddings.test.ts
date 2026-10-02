@@ -415,3 +415,32 @@ describe('getIndexStats', () => {
     expect(stats.totalChunks).toBe(0);
   });
 });
+
+describe('getCollectionNameForRoot', () => {
+  it('derives kyberbot_<agent name> from the root identity', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('fs');
+    const { join } = await import('path');
+    const { tmpdir } = await import('os');
+    const root = mkdtempSync(join(tmpdir(), 'kyberbot-collection-'));
+    try {
+      writeFileSync(join(root, 'identity.yaml'), 'agent_name: Atlas Prime\n');
+      const { getCollectionNameForRoot } = await import('./embeddings.js');
+      expect(getCollectionNameForRoot(root)).toBe('kyberbot_atlas_prime');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to kyberbot_data when the root has no identity', async () => {
+    const { mkdtempSync, rmSync } = await import('fs');
+    const { join } = await import('path');
+    const { tmpdir } = await import('os');
+    const root = mkdtempSync(join(tmpdir(), 'kyberbot-collection-'));
+    try {
+      const { getCollectionNameForRoot } = await import('./embeddings.js');
+      expect(getCollectionNameForRoot(root)).toBe('kyberbot_data');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
